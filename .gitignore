@@ -4,6 +4,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/
 *.pyc
+/backend/notes
 
 # Environment / secrets
 .env
@@ -36,3 +37,6 @@ mobile/ios/Flutter/.last_build_id/
 # OS
 .DS_Store
 Thumbs.db
+
+# cert
+backend/certs/
