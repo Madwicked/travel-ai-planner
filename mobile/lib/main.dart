@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'api_config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -162,7 +163,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     });
 
     final url = Uri.parse(
-      'http://10.0.2.2:8000/api/trips',
+      '${ApiConfig.baseUrl}/api/trips',
     );
 
     final body = {
@@ -244,7 +245,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     });
 
     final url = Uri.parse(
-      'http://10.0.2.2:8000/api/trips',
+      '${ApiConfig.baseUrl}/api/trips',
     );
 
     try {

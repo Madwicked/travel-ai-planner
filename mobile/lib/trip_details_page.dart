@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'api_config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -72,7 +73,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:8000/api/trips/$tripId/transports',
+          '${ApiConfig.baseUrl}/api/trips/$tripId/transports',
         ),
       );
 
@@ -133,7 +134,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:8000/api/trips/$tripId/hotels',
+          '${ApiConfig.baseUrl}/api/trips/$tripId/hotels',
         ),
       );
 
@@ -174,7 +175,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   try {
     final response = await http.get(
       Uri.parse(
-        'http://10.0.2.2:8000/api/trips/$tripId/places',
+        '${ApiConfig.baseUrl}/api/trips/$tripId/places',
       ),
     );
 
@@ -210,7 +211,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final response = await http.post(
       Uri.parse(
-        'http://10.0.2.2:8000/api/trips/$tripId/transports',
+        '${ApiConfig.baseUrl}/api/trips/$tripId/transports',
       ),
       headers: {
         'Content-Type': 'application/json',
@@ -357,7 +358,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       final response = await http.post(
         Uri.parse(
-          'http://10.0.2.2:8000/api/trips/$tripId/hotels',
+          '${ApiConfig.baseUrl}/api/trips/$tripId/hotels',
         ),
         headers: {
           'Content-Type': 'application/json',
@@ -429,7 +430,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   await http.delete(
     Uri.parse(
-      'http://10.0.2.2:8000/api/trips/$tripId/places',
+      '${ApiConfig.baseUrl}/api/trips/$tripId/places',
     ),
   );
 
@@ -437,7 +438,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     for (final place in places) {
       final response = await http.post(
         Uri.parse(
-          'http://10.0.2.2:8000/api/trips/$tripId/places',
+          '${ApiConfig.baseUrl}/api/trips/$tripId/places',
         ),
         headers: {
           'Content-Type': 'application/json',

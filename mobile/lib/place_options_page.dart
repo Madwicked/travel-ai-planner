@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'api_config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -30,7 +31,7 @@ class _PlaceOptionsPageState
     try {
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:8000/api/trips/$tripId/places/options',
+          '${ApiConfig.baseUrl}/api/trips/$tripId/places/options',
         ),
       );
 
