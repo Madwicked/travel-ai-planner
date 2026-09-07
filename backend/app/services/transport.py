@@ -1,86 +1,17 @@
-from datetime import timedelta
-
 from sqlalchemy.orm import Session
 
 from app.models.trip import Trip
 from app.models.transport import TripTransport
 from app.schemas.trip import TransportCreate, TransportUpdate
+from app.services.transport_provider import transport_provider
 
 
 def generate_transport_options(trip):
-    return [
-        {
-            "type": "Flight",
-            "price": 86,
-            "duration": "2h 30m",
-            "departure_date": trip.start_date,
-            "departure_time": "10:25",
-            "departure_location": f"{trip.origin} Airport",
-            "arrival_date": trip.start_date,
-            "arrival_time": "11:55",
-            "arrival_location": f"{trip.destination} Airport",
-        },
-        {
-            "type": "Bus",
-            "price": 65,
-            "duration": "14h 30m",
-            "departure_date": trip.start_date,
-            "departure_time": "18:00",
-            "departure_location": f"{trip.origin} Bus Station",
-            "arrival_date": trip.end_date,
-            "arrival_time": "08:30",
-            "arrival_location": f"{trip.destination} Bus Station",
-        },
-        {
-            "type": "Train",
-            "price": 120,
-            "duration": "12h 15m",
-            "departure_date": trip.start_date,
-            "departure_time": "07:45",
-            "departure_location": f"{trip.origin} Railway Station",
-            "arrival_date": trip.start_date,
-            "arrival_time": "20:00",
-            "arrival_location": f"{trip.destination} Railway Station",
-        },
-    ]
+    return transport_provider.get_outbound_options(trip)
 
 
 def generate_return_transport_options(trip):
-    return [
-        {
-            "type": "Flight",
-            "price": 92,
-            "duration": "2h 25m",
-            "departure_date": trip.end_date,
-            "departure_time": "14:20",
-            "departure_location": f"{trip.destination} Airport",
-            "arrival_date": trip.end_date,
-            "arrival_time": "16:45",
-            "arrival_location": f"{trip.origin} Airport",
-        },
-        {
-            "type": "Bus",
-            "price": 68,
-            "duration": "15h 10m",
-            "departure_date": trip.end_date,
-            "departure_time": "20:00",
-            "departure_location": f"{trip.destination} Bus Station",
-            "arrival_date": trip.end_date + timedelta(days=1),
-            "arrival_time": "11:10",
-            "arrival_location": f"{trip.origin} Bus Station",
-        },
-        {
-            "type": "Train",
-            "price": 115,
-            "duration": "12h 40m",
-            "departure_date": trip.end_date,
-            "departure_time": "08:15",
-            "departure_location": f"{trip.destination} Railway Station",
-            "arrival_date": trip.end_date,
-            "arrival_time": "20:55",
-            "arrival_location": f"{trip.origin} Railway Station",
-        },
-    ]
+    return transport_provider.get_return_options(trip)
 
 
 def create_transport(
@@ -88,6 +19,19 @@ def create_transport(
     transport: TransportCreate,
     db: Session,
 ):
+    existing_transport = (
+        db.query(TripTransport)
+        .filter(
+            TripTransport.trip_id == trip_id,
+            TripTransport.direction == transport.direction,
+        )
+        .first()
+    )
+
+    if existing_transport:
+        db.delete(existing_transport)
+        db.flush()
+
     new_transport = TripTransport(
         trip_id=trip_id,
         direction=transport.direction,

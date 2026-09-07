@@ -1,8 +1,7 @@
-import 'dart:convert';
-import 'api_config.dart';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+
+import '../models/hotel.dart';
+import '../services/hotel_service.dart';
 
 class HotelOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -19,43 +18,17 @@ class HotelOptionsPage extends StatefulWidget {
 
 class _HotelOptionsPageState
     extends State<HotelOptionsPage> {
-  List<Map<String, dynamic>> options = [];
+  List<Hotel> options = [];
 
   bool isLoading = true;
   String? errorMessage;
-
-  String formatDateForDisplay(String date) {
-    final parts = date.split('-');
-
-    if (parts.length != 3) {
-      return date;
-    }
-
-    return '${parts[2]}.${parts[1]}.${parts[0]}';
-  }
 
   Future<void> loadHotelOptions() async {
     final tripId = widget.trip['id'];
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '${ApiConfig.baseUrl}/api/trips/$tripId/hotels/options',
-        ),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to load hotel options',
-        );
-      }
-
-      final data = jsonDecode(response.body);
-
       final loadedOptions =
-          List<Map<String, dynamic>>.from(
-        data['options'],
-      );
+          await HotelService.getHotelOptions(tripId);
 
       if (!mounted) return;
 
@@ -196,8 +169,7 @@ class _HotelOptionsPageState
                               CrossAxisAlignment.start,
                           children: [
                             Text(
-                              option['name']
-                                  as String,
+                              option.name,
                               style:
                                   const TextStyle(
                                 fontSize: 18,
@@ -209,8 +181,7 @@ class _HotelOptionsPageState
                             const SizedBox(height: 6),
 
                             Text(
-                              option['city']
-                                  as String,
+                              option.city,
                               style: const TextStyle(
                                 fontSize: 15,
                               ),
@@ -219,8 +190,7 @@ class _HotelOptionsPageState
                             const SizedBox(height: 4),
 
                             Text(
-                              option['address']
-                                  as String,
+                              option.address,
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors
@@ -232,14 +202,12 @@ class _HotelOptionsPageState
                             const SizedBox(height: 10),
 
                             Text(
-                              '${formatDateForDisplay(
-                                option['check_in']
-                                    as String,
-                              )} → '
-                              '${formatDateForDisplay(
-                                option['check_out']
-                                    as String,
-                              )}',
+                              '${option.checkIn.day.toString().padLeft(2, '0')}.'
+                              '${option.checkIn.month.toString().padLeft(2, '0')}.'
+                              '${option.checkIn.year} → '
+                              '${option.checkOut.day.toString().padLeft(2, '0')}.'
+                              '${option.checkOut.month.toString().padLeft(2, '0')}.'
+                              '${option.checkOut.year}',
                               style:
                                   const TextStyle(
                                 fontSize: 15,
@@ -249,8 +217,8 @@ class _HotelOptionsPageState
                             const SizedBox(height: 4),
 
                             Text(
-                              '${option['nights']} '
-                              '${option['nights'] == 1 ? 'night' : 'nights'}',
+                              '${option.nights} '
+                              '${option.nights == 1 ? 'night' : 'nights'}',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors
@@ -269,7 +237,7 @@ class _HotelOptionsPageState
                             CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '€${option['total_price']}',
+                            '€${option.totalPrice}',
                             style:
                                 const TextStyle(
                               fontSize: 20,
@@ -281,7 +249,7 @@ class _HotelOptionsPageState
                           const SizedBox(height: 4),
 
                           Text(
-                            '€${option['price_per_night']}/night',
+                            '€${option.pricePerNight}/night',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors
@@ -302,3 +270,4 @@ class _HotelOptionsPageState
     );
   }
 }
+

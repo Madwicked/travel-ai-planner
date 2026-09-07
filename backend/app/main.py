@@ -6,7 +6,7 @@ from app.models.trip import Trip
 from app.models.hotel import TripHotel
 from app.models.place import TripPlace
 from app.routers.trips import router as trips_router
-
+from app.routers.locations import router as locations_router
 
 app = FastAPI(
     title="Travel AI Planner API",
@@ -16,7 +16,7 @@ app = FastAPI(
 Base.metadata.create_all(bind=engine)
 
 app.include_router(trips_router)
-
+app.include_router(locations_router)
 
 @app.get("/")
 def root():

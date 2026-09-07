@@ -4,7 +4,10 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/.pytest_cache/
 *.pyc
+
+#chernoviki
 /backend/notes
+/backend/test_flightapi.py
 
 # Environment / secrets
 .env

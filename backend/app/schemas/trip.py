@@ -4,7 +4,14 @@ from pydantic import BaseModel, Field
 
 class TripCreate(BaseModel):
     origin: str = Field(min_length=1)
+    origin_country: str | None = None
+    origin_latitude: float | None = None
+    origin_longitude: float | None = None
+
     destination: str = Field(min_length=1)
+    destination_country: str | None = None
+    destination_latitude: float | None = None
+    destination_longitude: float | None = None
 
     start_date: date
     end_date: date

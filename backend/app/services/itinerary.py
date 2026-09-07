@@ -179,10 +179,24 @@ def generate_itinerary_data(
                     previous_place = current_places[-1]
 
                     start_minutes = (
-                        previous_place["start_minutes"]
-                        + previous_place["duration_minutes"]
-                        + 30
+                            previous_place["start_minutes"]
+                            + previous_place["duration_minutes"]
+                            + 30
                     )
+
+                    if (
+                            start_minutes > lunch_start
+                            and start_minutes < lunch_end
+                    ):
+                        start_minutes = lunch_end + 30
+
+                    elif (
+                            start_minutes <= lunch_start
+                            and start_minutes
+                            + visit_minutes
+                            > lunch_start
+                    ):
+                        start_minutes = lunch_end + 30
                 else:
                     start_minutes = max(
                         opening_minutes,
@@ -479,55 +493,32 @@ def generate_itinerary_data(
                         )
 
                         transfer_start = (
-                            start_minutes
-                            - transfer_minutes
+                                start_minutes
+                                - transfer_minutes
                         )
 
-                        if (
-                            transfer_start >= lunch_start
-                            and
-                            transfer_start < lunch_end
-                        ):
-                            transfer_text = None
+                        transfer_start_time = format_minutes(
+                            transfer_start
+                        )
 
-                        elif (
-                            transfer_start < lunch_start
-                            and
-                            start_minutes > lunch_start
-                        ):
-                            transfer_text = None
+                        transfer_end_time = format_minutes(
+                            start_minutes
+                        )
 
+                        transfer_text = (
+                            f"{transfer_start_time}–"
+                            f"{transfer_end_time} "
+                            f"Travel to {place.name}."
+                        )
+
+                        if transfer_start < lunch_start:
+                            morning_places.append(
+                                transfer_text
+                            )
                         else:
-                            transfer_start_time = (
-                                format_minutes(
-                                    transfer_start
-                                )
+                            afternoon_places.append(
+                                transfer_text
                             )
-
-                            transfer_end_time = (
-                                format_minutes(
-                                    start_minutes
-                                )
-                            )
-
-                            transfer_text = (
-                                f"{transfer_start_time}–"
-                                f"{transfer_end_time} "
-                                f"Travel to {place.name}."
-                            )
-
-                        if transfer_text:
-                            if (
-                                transfer_start
-                                < lunch_start
-                            ):
-                                morning_places.append(
-                                    transfer_text
-                                )
-                            else:
-                                afternoon_places.append(
-                                    transfer_text
-                                )
 
                     start_time = format_minutes(
                         start_minutes
@@ -550,9 +541,35 @@ def generate_itinerary_data(
                         afternoon_places.append(
                             place_text
                         )
+                morning_place_items = [
+                    item
+                    for item in scheduled_places
+                    if item["start_minutes"] < lunch_start
+                ]
+
+                if morning_place_items:
+                    last_morning_place = morning_place_items[-1]
+
+                    travel_start = (
+                            last_morning_place["start_minutes"]
+                            + last_morning_place["duration_minutes"]
+                    )
+
+                    travel_end = travel_start + 30
+
+                    if travel_start < lunch_start:
+                        travel_text = (
+                            f"{format_minutes(travel_start)}–"
+                            f"{format_minutes(travel_end)} "
+                            "Travel to lunch."
+                        )
+
+                        morning_places.append(
+                            travel_text
+                        )
 
                 if morning_places:
-                    morning = " ".join(
+                    morning = "\n ".join(
                         morning_places
                     )
                 else:
@@ -562,7 +579,7 @@ def generate_itinerary_data(
                     )
 
                 if afternoon_places:
-                    afternoon = " ".join(
+                    afternoon = "\n".join(
                         afternoon_places
                     )
                 else:

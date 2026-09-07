@@ -34,6 +34,7 @@ from app.schemas.trip import (
 from app.services.trips import (
     create_trip,
     get_trips,
+    delete_trip,
 )
 
 router = APIRouter(
@@ -331,4 +332,22 @@ def get_trips_endpoint(
     db: Session = Depends(get_db),
 ):
     return get_trips(db=db)
+
+@router.delete("/{trip_id}")
+def delete_trip_endpoint(
+    trip_id: int,
+    db: Session = Depends(get_db),
+):
+    result = delete_trip(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return result
 

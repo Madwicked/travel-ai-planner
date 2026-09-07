@@ -1,0 +1,96 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../api_config.dart';
+
+class ApiService {
+  static Future<Map<String, dynamic>> createTrip({
+    required String origin,
+    required String originCountry,
+    required double originLatitude,
+    required double originLongitude,
+
+    required String destination,
+    required String destinationCountry,
+    required double destinationLatitude,
+    required double destinationLongitude,
+
+    required String startDate,
+    required String endDate,
+    required int travelers,
+    required double budget,
+    required List<String> interests,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips');
+
+    final body = {
+      'origin': origin,
+      'origin_country': originCountry,
+      'origin_latitude': originLatitude,
+      'origin_longitude': originLongitude,
+
+      'destination': destination,
+      'destination_country': destinationCountry,
+      'destination_latitude': destinationLatitude,
+      'destination_longitude': destinationLongitude,
+
+      'start_date': startDate,
+      'end_date': endDate,
+      'travelers': travelers,
+      'budget': budget,
+      'interests': interests,
+    };
+
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  static Future<List<dynamic>> getTrips() async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips');
+
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body);
+
+    return data['trips'] ?? [];
+  }
+
+  static Future<List<dynamic>> searchCities(String query) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/locations/search')
+        .replace(queryParameters: {'q': query});
+
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body);
+
+    return data['cities'] ?? [];
+  }
+
+  static Future<void> deleteTrip(int tripId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId');
+
+    final response = await http.delete(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+  }
+}

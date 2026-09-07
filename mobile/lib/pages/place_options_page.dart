@@ -1,8 +1,7 @@
-import 'dart:convert';
-import 'api_config.dart';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+
+import '../models/place.dart';
+import '../services/place_service.dart';
 
 class PlaceOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -19,7 +18,7 @@ class PlaceOptionsPage extends StatefulWidget {
 
 class _PlaceOptionsPageState
     extends State<PlaceOptionsPage> {
-  List<Map<String, dynamic>> options = [];
+  List<Place> options = [];
   final Set<int> selectedIndexes = {};
 
   bool isLoading = true;
@@ -29,24 +28,8 @@ class _PlaceOptionsPageState
     final tripId = widget.trip['id'];
 
     try {
-      final response = await http.get(
-        Uri.parse(
-          '${ApiConfig.baseUrl}/api/trips/$tripId/places/options',
-        ),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception(
-          'Failed to load place options',
-        );
-      }
-
-      final data = jsonDecode(response.body);
-
       final loadedOptions =
-          List<Map<String, dynamic>>.from(
-        data['options'],
-      );
+          await PlaceService.getPlaceOptions(tripId);
 
       if (!mounted) return;
 
@@ -237,8 +220,7 @@ class _PlaceOptionsPageState
                           ),
                           child: Icon(
                             getPlaceIcon(
-                              option['category']
-                                  as String,
+                              option.category,
                             ),
                             color: Colors.blue,
                             size: 28,
@@ -248,12 +230,10 @@ class _PlaceOptionsPageState
                         Expanded(
                           child: Column(
                             crossAxisAlignment:
-                                CrossAxisAlignment
-                                    .start,
+                                CrossAxisAlignment.start,
                             children: [
                               Text(
-                                option['name']
-                                    as String,
+                                option.name,
                                 style:
                                     const TextStyle(
                                   fontSize: 18,
@@ -263,8 +243,7 @@ class _PlaceOptionsPageState
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                option['category']
-                                    as String,
+                                option.category,
                                 style:
                                     const TextStyle(
                                   fontSize: 15,
@@ -272,8 +251,7 @@ class _PlaceOptionsPageState
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                option['address']
-                                    as String,
+                                option.address,
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors
@@ -284,9 +262,9 @@ class _PlaceOptionsPageState
                               const SizedBox(height: 10),
                               Text(
                                 'Open: '
-                                '${option['opening_time']}'
+                                '${option.openingTime}'
                                 '–'
-                                '${option['closing_time']}',
+                                '${option.closingTime}',
                                 style:
                                     const TextStyle(
                                   fontSize: 15,
@@ -295,7 +273,7 @@ class _PlaceOptionsPageState
                               const SizedBox(height: 4),
                               Text(
                                 'Visit: '
-                                '${option['visit_duration']}',
+                                '${option.visitDuration ?? '-'}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors
