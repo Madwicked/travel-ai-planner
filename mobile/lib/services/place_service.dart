@@ -6,10 +6,10 @@ import '../api_config.dart';
 import '../models/place.dart';
 
 class PlaceService {
-  static Future<List<Place>> getPlaceOptions(int tripId) async {
+  static Future<List<Place>> getPlaceOptions(int tripId, int radiusKm) async {
     final url = Uri.parse(
       '${ApiConfig.baseUrl}/api/trips/$tripId/places/options',
-    );
+    ).replace(queryParameters: {'radius_km': radiusKm.toString()});
 
     final response = await http.get(url);
 
@@ -89,5 +89,20 @@ class PlaceService {
     final data = jsonDecode(response.body);
 
     return Place.fromJson(Map<String, dynamic>.from(data['place']));
+  }
+
+  static Future<void> deletePlace({
+    required int tripId,
+    required int placeId,
+  }) async {
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/api/trips/$tripId/places/$placeId',
+    );
+
+    final response = await http.delete(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
   }
 }

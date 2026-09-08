@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+
 
 
 from app.services.itinerary import generate_itinerary_data
@@ -18,6 +19,7 @@ from app.services.hotels import (
 from app.services.places import (
     generate_place_options,
     delete_places,
+    delete_place,
     create_place,
     get_places,
 )
@@ -104,6 +106,7 @@ def get_transports_endpoint(
 @router.get("/{trip_id}/transports/options")
 def get_transport_options(
     trip_id: int,
+    refresh: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
@@ -114,19 +117,24 @@ def get_transport_options(
             detail="Trip not found",
         )
 
-    options = generate_transport_options(trip)
+    result = generate_transport_options(
+        trip,
+        db,
+        refresh=refresh,
+    )
 
     return {
         "trip_id": trip.id,
         "origin": trip.origin,
         "destination": trip.destination,
-        "options": options,
+        **result,
     }
 
 
 @router.get("/{trip_id}/transports/return-options")
 def get_return_transport_options(
     trip_id: int,
+    refresh: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
@@ -137,13 +145,17 @@ def get_return_transport_options(
             detail="Trip not found",
         )
 
-    options = generate_return_transport_options(trip)
+    result = generate_return_transport_options(
+        trip,
+        db,
+        refresh=refresh,
+    )
 
     return {
         "trip_id": trip.id,
         "origin": trip.destination,
         "destination": trip.origin,
-        "options": options,
+        **result,
     }
 
 
@@ -168,8 +180,10 @@ def update_transport_endpoint(
     )
 
 @router.get("/{trip_id}/hotels/options")
+@router.get("/{trip_id}/hotels/options")
 def get_hotel_options(
     trip_id: int,
+    refresh: bool = False,
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
@@ -180,12 +194,16 @@ def get_hotel_options(
             detail="Trip not found",
         )
 
-    options = generate_hotel_options(trip)
+    result = generate_hotel_options(
+        trip,
+        db,
+        refresh=refresh,
+    )
 
     return {
         "trip_id": trip.id,
         "destination": trip.destination,
-        "options": options,
+        **result,
     }
 
 
@@ -232,6 +250,7 @@ def get_hotels_endpoint(
 @router.get("/{trip_id}/places/options")
 def get_place_options(
     trip_id: int,
+    radius_km: int = 10,
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
@@ -242,7 +261,10 @@ def get_place_options(
             detail="Trip not found",
         )
 
-    options = generate_place_options(trip)
+    options = generate_place_options(
+        trip,
+        radius_km=radius_km,
+    )
 
     return {
         "trip_id": trip.id,
@@ -268,6 +290,34 @@ def delete_places_endpoint(
         trip_id=trip_id,
         db=db,
     )
+
+@router.delete("/{trip_id}/places/{place_id}")
+def delete_place_endpoint(
+    trip_id: int,
+    place_id: int,
+    db: Session = Depends(get_db),
+):
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    result = delete_place(
+        trip_id=trip_id,
+        place_id=place_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Place not found",
+        )
+
+    return result
 
 
 @router.post("/{trip_id}/places")

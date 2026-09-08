@@ -335,24 +335,54 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   Widget buildPlaceCard(Place place) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
           children: [
-            Text(
-              place.name,
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            Expanded(
+              child: Text(
+                place.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
 
-            const SizedBox(height: 6),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              onPressed: () async {
+                if (place.id == null) {
+                  return;
+                }
 
-            Text(place.city),
+                final tripId = widget.trip['id'];
 
-            const SizedBox(height: 4),
+                try {
+                  await PlaceService.deletePlace(
+                    tripId: tripId,
+                    placeId: place.id!,
+                  );
 
-            Text(place.address, style: TextStyle(color: Colors.grey.shade600)),
+                  if (!mounted) return;
+
+                  setState(() {
+                    selectedPlaces.remove(place);
+                  });
+                } catch (e) {
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete place: $e')),
+                  );
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -374,6 +404,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
+
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -582,7 +613,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 24),
 
             // =========================
-            /// PLACES
+            // PLACES
+            // =========================
             const Text(
               'Places',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -593,9 +625,22 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             if (isLoadingPlaces)
               const Center(child: CircularProgressIndicator())
             else if (selectedPlaces.isNotEmpty) ...[
-              ...selectedPlaces.map(buildPlaceCard),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: selectedPlaces.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 6,
+                  childAspectRatio: 3.5,
+                ),
+                itemBuilder: (context, index) {
+                  return buildPlaceCard(selectedPlaces[index]);
+                },
+              ),
 
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
 
               SizedBox(
                 width: double.infinity,

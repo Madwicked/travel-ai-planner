@@ -1,5 +1,5 @@
 from datetime import date
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TripCreate(BaseModel):
@@ -20,6 +20,13 @@ class TripCreate(BaseModel):
     budget: float = Field(gt=0)
 
     interests: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+
+        return self
 
 class TransportUpdate(BaseModel):
     transport_type: str

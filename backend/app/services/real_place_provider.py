@@ -2,6 +2,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
+import math
 
 from dotenv import load_dotenv
 
@@ -26,19 +27,23 @@ class RealPlaceProvider(PlaceProvider):
         self,
         latitude: float,
         longitude: float,
+        radius_km: int = 10,
     ):
         params = {
-            "categories": "tourism",
+            "categories": "tourism,catering.restaurant,entertainment",
             "filter": (
-                f"circle:{longitude},{latitude},10000"
+                f"circle:{longitude},{latitude},{radius_km * 1000}"
             ),
             "bias": (
                 f"proximity:{longitude},{latitude}"
             ),
-            "limit": 20,
+            "limit": 50,
             "lang": "en",
             "apiKey": self.api_key,
         }
+
+        print("RADIUS KM:", radius_km)
+        print("FILTER:", params["filter"])
 
         url = (
             f"{self.BASE_URL}?"
@@ -69,23 +74,33 @@ class RealPlaceProvider(PlaceProvider):
 
         for category in categories:
             if category.startswith(
-                "tourism.sights"
+                    "catering.restaurant"
+            ):
+                return "Food"
+
+            if category.startswith(
+                    "tourism.sights"
             ):
                 return "Sightseeing"
 
             if category.startswith(
-                "tourism.attraction"
+                    "tourism.attraction"
             ):
                 return "Sightseeing"
 
             if category.startswith(
-                "entertainment"
+                    "entertainment"
             ):
                 return "Entertainment"
 
         return "Tourism"
 
-    def _build_place(self, feature):
+    def _build_place(
+            self,
+            feature,
+            center_latitude,
+            center_longitude,
+    ):
         properties = feature.get(
             "properties",
             {},
@@ -134,6 +149,15 @@ class RealPlaceProvider(PlaceProvider):
             "address": address,
             "latitude": latitude,
             "longitude": longitude,
+            "distance_km": round(
+                self._calculate_distance_km(
+                    center_latitude,
+                    center_longitude,
+                    latitude,
+                    longitude,
+                ),
+                1,
+            ),
             "rating": None,
             "opening_hours": None,
             "opening_time": "09:00",
@@ -141,10 +165,14 @@ class RealPlaceProvider(PlaceProvider):
             "visit_duration": "1h",
         }
 
-    def get_place_options(self, trip):
+    def get_place_options(
+            self,
+            trip,
+            radius_km: int = 10,
+    ):
         if (
-            trip.destination_latitude is None
-            or trip.destination_longitude is None
+                trip.destination_latitude is None
+                or trip.destination_longitude is None
         ):
             raise ValueError(
                 "Destination coordinates are required"
@@ -153,19 +181,57 @@ class RealPlaceProvider(PlaceProvider):
         data = self._request(
             latitude=trip.destination_latitude,
             longitude=trip.destination_longitude,
+            radius_km=radius_km,
         )
 
         options = []
 
         for feature in data.get(
-            "features",
-            [],
+                "features",
+                [],
         ):
-            place = self._build_place(feature)
+            place = self._build_place(
+                feature,
+                trip.destination_latitude,
+                trip.destination_longitude,
+            )
 
             if place:
                 options.append(place)
 
         return options
+
+    def _calculate_distance_km(
+            self,
+            latitude1: float,
+            longitude1: float,
+            latitude2: float,
+            longitude2: float,
+    ):
+        earth_radius_km = 6371
+
+        lat1 = math.radians(latitude1)
+        lat2 = math.radians(latitude2)
+
+        delta_lat = math.radians(
+            latitude2 - latitude1
+        )
+        delta_lon = math.radians(
+            longitude2 - longitude1
+        )
+
+        a = (
+                math.sin(delta_lat / 2) ** 2
+                + math.cos(lat1)
+                * math.cos(lat2)
+                * math.sin(delta_lon / 2) ** 2
+        )
+
+        c = 2 * math.atan2(
+            math.sqrt(a),
+            math.sqrt(1 - a),
+        )
+
+        return earth_radius_km * c
 
 

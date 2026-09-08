@@ -21,7 +21,10 @@ class Place {
 
   final String? visitDuration;
 
+  final double? distanceKm;
+
   const Place({
+    this.distanceKm,
     this.id,
     this.tripId,
     this.externalId,
@@ -39,10 +42,9 @@ class Place {
     this.visitDuration,
   });
 
-  factory Place.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory Place.fromJson(Map<String, dynamic> json) {
     return Place(
+      distanceKm: (json['distance_km'] as num?)?.toDouble(),
       id: json['id'],
       tripId: json['trip_id'],
       externalId: json['external_id'],
@@ -51,18 +53,12 @@ class Place {
       city: json['city'],
       category: json['category'],
       address: json['address'],
-      latitude:
-          (json['latitude'] as num?)?.toDouble(),
-      longitude:
-          (json['longitude'] as num?)?.toDouble(),
-      rating:
-          (json['rating'] as num?)?.toDouble(),
-      openingHours:
-          json['opening_hours'] != null
-              ? Map<String, dynamic>.from(
-                  json['opening_hours'],
-                )
-              : null,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      rating: (json['rating'] as num?)?.toDouble(),
+      openingHours: json['opening_hours'] != null
+          ? Map<String, dynamic>.from(json['opening_hours'])
+          : null,
       openingTime: json['opening_time'],
       closingTime: json['closing_time'],
       visitDuration: json['visit_duration'],
@@ -71,6 +67,7 @@ class Place {
 
   Map<String, dynamic> toJson() {
     return {
+      'distance_km': distanceKm,
       'id': id,
       'trip_id': tripId,
       'external_id': externalId,
@@ -89,4 +86,3 @@ class Place {
     };
   }
 }
-

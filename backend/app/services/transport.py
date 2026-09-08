@@ -4,15 +4,113 @@ from app.models.trip import Trip
 from app.models.transport import TripTransport
 from app.schemas.trip import TransportCreate, TransportUpdate
 from app.services.transport_provider import transport_provider
+from app.services.cache_service import cache_service
 
 
-def generate_transport_options(trip):
-    return transport_provider.get_outbound_options(trip)
+def generate_transport_options(
+    trip,
+    db: Session,
+    refresh: bool = False,
+):
+    cache = cache_service.get(
+        db=db,
+        trip_id=trip.id,
+        cache_type="transport",
+        direction="outbound",
+    )
+
+    if cache and not refresh:
+        outdated = cache_service.is_expired(
+            cache,
+            ttl_minutes=5,
+        )
+
+        return {
+            "options": cache_service.load_data(cache),
+            "cached": True,
+            "outdated": outdated,
+            "fetched_at": cache.fetched_at,
+            "expires_at": cache_service.get_expires_at(
+                cache,
+                ttl_minutes=5,
+            ),
+        }
+
+    options = transport_provider.get_outbound_options(
+        trip
+    )
+
+    cache = cache_service.save(
+        db=db,
+        trip_id=trip.id,
+        cache_type="transport",
+        direction="outbound",
+        data=options,
+    )
+
+    return {
+        "options": options,
+        "cached": False,
+        "outdated": False,
+        "fetched_at": cache.fetched_at,
+        "expires_at": cache_service.get_expires_at(
+            cache,
+            ttl_minutes=5,
+        ),
+    }
 
 
-def generate_return_transport_options(trip):
-    return transport_provider.get_return_options(trip)
+def generate_return_transport_options(
+    trip,
+    db: Session,
+    refresh: bool = False,
+):
+    cache = cache_service.get(
+        db=db,
+        trip_id=trip.id,
+        cache_type="transport",
+        direction="return",
+    )
 
+    if cache and not refresh:
+        outdated = cache_service.is_expired(
+            cache,
+            ttl_minutes=5,
+        )
+
+        return {
+            "options": cache_service.load_data(cache),
+            "cached": True,
+            "outdated": outdated,
+            "fetched_at": cache.fetched_at,
+            "expires_at": cache_service.get_expires_at(
+                cache,
+                ttl_minutes=5,
+            ),
+        }
+
+    options = transport_provider.get_return_options(
+        trip
+    )
+
+    cache = cache_service.save(
+        db=db,
+        trip_id=trip.id,
+        cache_type="transport",
+        direction="return",
+        data=options,
+    )
+
+    return {
+        "options": options,
+        "cached": False,
+        "outdated": False,
+        "fetched_at": cache.fetched_at,
+        "expires_at": cache_service.get_expires_at(
+            cache,
+            ttl_minutes=5,
+        ),
+    }
 
 def create_transport(
     trip_id: int,

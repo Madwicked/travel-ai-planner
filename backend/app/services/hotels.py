@@ -4,9 +4,58 @@ from app.models.hotel import TripHotel
 from app.models.trip import Trip
 from app.schemas.trip import HotelCreate
 from app.services.hotel_provider import hotel_provider
+from app.services.cache_service import cache_service
 
-def generate_hotel_options(trip):
-    return hotel_provider.get_hotel_options(trip)
+
+def generate_hotel_options(
+    trip,
+    db: Session,
+    refresh: bool = False,
+):
+    cache = cache_service.get(
+        db=db,
+        trip_id=trip.id,
+        cache_type="hotel",
+    )
+
+    if cache and not refresh:
+        outdated = cache_service.is_expired(
+            cache,
+            ttl_minutes=5,
+        )
+
+        return {
+            "options": cache_service.load_data(cache),
+            "cached": True,
+            "outdated": outdated,
+            "fetched_at": cache.fetched_at,
+            "expires_at": cache_service.get_expires_at(
+                cache,
+                ttl_minutes=5,
+            ),
+        }
+
+    options = hotel_provider.get_hotel_options(
+        trip
+    )
+
+    cache = cache_service.save(
+        db=db,
+        trip_id=trip.id,
+        cache_type="hotel",
+        data=options,
+    )
+
+    return {
+        "options": options,
+        "cached": False,
+        "outdated": False,
+        "fetched_at": cache.fetched_at,
+        "expires_at": cache_service.get_expires_at(
+            cache,
+            ttl_minutes=5,
+        ),
+    }
 
 
 def create_hotel(

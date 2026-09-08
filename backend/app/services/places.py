@@ -6,8 +6,14 @@ from app.schemas.trip import PlaceCreate
 from app.services.place_provider import place_provider
 
 
-def generate_place_options(trip):
-    return place_provider.get_place_options(trip)
+def generate_place_options(
+    trip,
+    radius_km: int = 10,
+):
+    return place_provider.get_place_options(
+        trip,
+        radius_km=radius_km,
+    )
 
 
 def delete_places(
@@ -109,4 +115,29 @@ def get_places(
             }
             for place in places
         ],
+    }
+def delete_place(
+    trip_id: int,
+    place_id: int,
+    db: Session,
+):
+    place = (
+        db.query(TripPlace)
+        .filter(
+            TripPlace.id == place_id,
+            TripPlace.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if place is None:
+        return None
+
+    db.delete(place)
+    db.commit()
+
+    return {
+        "message": "Place deleted",
+        "trip_id": trip_id,
+        "place_id": place_id,
     }

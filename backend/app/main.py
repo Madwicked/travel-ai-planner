@@ -5,6 +5,7 @@ from app.database import engine, Base
 from app.models.trip import Trip
 from app.models.hotel import TripHotel
 from app.models.place import TripPlace
+from app.models.api_cache import ApiCache
 from app.routers.trips import router as trips_router
 from app.routers.locations import router as locations_router
 
