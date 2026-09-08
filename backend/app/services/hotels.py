@@ -14,6 +14,18 @@ def create_hotel(
     hotel: HotelCreate,
     db: Session,
 ):
+    existing_hotel = (
+        db.query(TripHotel)
+        .filter(
+            TripHotel.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if existing_hotel:
+        db.delete(existing_hotel)
+        db.flush()
+
     new_hotel = TripHotel(
         trip_id=trip_id,
         name=hotel.name,

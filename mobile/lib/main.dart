@@ -308,9 +308,19 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Travel AI Planner',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Travel AI Planner',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'v1.0.0',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
         centerTitle: true,
       ),

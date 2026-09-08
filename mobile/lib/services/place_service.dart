@@ -6,9 +6,7 @@ import '../api_config.dart';
 import '../models/place.dart';
 
 class PlaceService {
-  static Future<List<Place>> getPlaceOptions(
-    int tripId,
-  ) async {
+  static Future<List<Place>> getPlaceOptions(int tripId) async {
     final url = Uri.parse(
       '${ApiConfig.baseUrl}/api/trips/$tripId/places/options',
     );
@@ -16,55 +14,47 @@ class PlaceService {
     final response = await http.get(url);
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Server error: ${response.statusCode}',
-      );
+      throw Exception('Server error: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
 
     return (data['options'] as List)
-        .map(
-          (place) => Place.fromJson(
-            Map<String, dynamic>.from(place),
-          ),
-        )
+        .map((place) => Place.fromJson(Map<String, dynamic>.from(place)))
         .toList();
   }
 
-  static Future<List<Place>> getPlaces(
-    int tripId,
-  ) async {
-    final url = Uri.parse(
-      '${ApiConfig.baseUrl}/api/trips/$tripId/places',
-    );
+  static Future<List<Place>> getPlaces(int tripId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/places');
 
     final response = await http.get(url);
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Server error: ${response.statusCode}',
-      );
+      throw Exception('Server error: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
 
     return (data['places'] as List)
-        .map(
-          (place) => Place.fromJson(
-            Map<String, dynamic>.from(place),
-          ),
-        )
+        .map((place) => Place.fromJson(Map<String, dynamic>.from(place)))
         .toList();
+  }
+
+  static Future<void> deletePlaces(int tripId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/places');
+
+    final response = await http.delete(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
   }
 
   static Future<Place> createPlace({
     required int tripId,
     required Place place,
   }) async {
-    final url = Uri.parse(
-      '${ApiConfig.baseUrl}/api/trips/$tripId/places',
-    );
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/places');
 
     final body = {
       'external_id': place.externalId,
@@ -88,24 +78,16 @@ class PlaceService {
 
     final response = await http.post(
       url,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
 
     if (response.statusCode != 200) {
-      throw Exception(
-        'Server error: ${response.statusCode}',
-      );
+      throw Exception('Server error: ${response.statusCode}');
     }
 
     final data = jsonDecode(response.body);
 
-    return Place.fromJson(
-      Map<String, dynamic>.from(
-        data['place'],
-      ),
-    );
+    return Place.fromJson(Map<String, dynamic>.from(data['place']));
   }
 }

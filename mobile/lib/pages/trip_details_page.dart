@@ -246,6 +246,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final tripId = widget.trip['id'];
 
     try {
+      await PlaceService.deletePlaces(tripId);
+
       final savedPlaces = <Place>[];
 
       for (final place in places) {
@@ -558,6 +560,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                               color: Colors.grey.shade600,
                             ),
                           ),
+
+                          const SizedBox(height: 12),
+
+                          OutlinedButton(
+                            onPressed: chooseHotel,
+                            child: const Text('Change hotel'),
+                          ),
                         ],
                       ),
                     ],
@@ -573,8 +582,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 24),
 
             // =========================
-            // PLACES
-            // =========================
+            /// PLACES
             const Text(
               'Places',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -584,9 +592,19 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             if (isLoadingPlaces)
               const Center(child: CircularProgressIndicator())
-            else if (selectedPlaces.isNotEmpty)
-              ...selectedPlaces.map(buildPlaceCard)
-            else
+            else if (selectedPlaces.isNotEmpty) ...[
+              ...selectedPlaces.map(buildPlaceCard),
+
+              const SizedBox(height: 4),
+
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: choosePlaces,
+                  child: const Text('Change places'),
+                ),
+              ),
+            ] else
               ElevatedButton(
                 onPressed: choosePlaces,
                 child: const Text('Choose places'),
