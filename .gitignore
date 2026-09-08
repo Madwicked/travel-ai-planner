@@ -41,5 +41,5 @@ mobile/ios/Flutter/.last_build_id/
 .DS_Store
 Thumbs.db
 
-# cert
+# Certificates and private keys
 backend/certs/
