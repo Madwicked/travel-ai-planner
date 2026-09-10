@@ -4,7 +4,16 @@ class Transport {
 
   final String direction;
   final String type;
+
   final double price;
+  final String currency;
+
+  final double destinationPrice;
+  final String destinationCurrency;
+
+  final double userPrice;
+  final String userCurrency;
+
   final String duration;
 
   final String departureDate;
@@ -23,6 +32,11 @@ class Transport {
     required this.direction,
     required this.type,
     required this.price,
+    required this.currency,
+    required this.destinationPrice,
+    required this.destinationCurrency,
+    required this.userPrice,
+    required this.userCurrency,
     required this.duration,
     required this.departureDate,
     required this.departureTime,
@@ -38,15 +52,23 @@ class Transport {
       id: json['id'],
       tripId: json['trip_id'],
       direction: json['direction'] ?? '',
-      type: json['type'],
+      type: json['type'] ?? '',
       price: (json['price'] as num).toDouble(),
-      duration: json['duration'],
-      departureDate: json['departure_date'],
-      departureTime: json['departure_time'],
-      departureLocation: json['departure_location'],
-      arrivalDate: json['arrival_date'],
-      arrivalTime: json['arrival_time'],
-      arrivalLocation: json['arrival_location'],
+      currency: json['currency'] ?? 'EUR',
+
+      destinationPrice: (json['destination_price'] as num).toDouble(),
+      destinationCurrency: json['destination_currency'] ?? 'EUR',
+
+      userPrice: (json['user_price'] as num).toDouble(),
+      userCurrency: json['user_currency'] ?? 'EUR',
+
+      duration: json['duration'] ?? '',
+      departureDate: json['departure_date'] ?? '',
+      departureTime: json['departure_time'] ?? '',
+      departureLocation: json['departure_location'] ?? '',
+      arrivalDate: json['arrival_date'] ?? '',
+      arrivalTime: json['arrival_time'] ?? '',
+      arrivalLocation: json['arrival_location'] ?? '',
       bookingUrl: json['booking_url'],
     );
   }
@@ -58,6 +80,14 @@ class Transport {
       'direction': direction,
       'type': type,
       'price': price,
+      'currency': currency,
+
+      'destination_price': destinationPrice,
+      'destination_currency': destinationCurrency,
+
+      'user_price': userPrice,
+      'user_currency': userCurrency,
+
       'duration': duration,
       'departure_date': departureDate,
       'departure_time': departureTime,

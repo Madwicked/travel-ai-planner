@@ -127,6 +127,8 @@ class _TransportOptionsPageState extends State<TransportOptionsPage> {
       );
     }
 
+    final destinationCurrency = widget.trip['destination_currency'] ?? 'EUR';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -226,10 +228,30 @@ class _TransportOptionsPageState extends State<TransportOptionsPage> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '€${option.price}',
+                            '${option.destinationPrice} $destinationCurrency',
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            '${option.userPrice} ${option.userCurrency}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            '${option.price} ${option.currency}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                           if (option.bookingUrl != null &&

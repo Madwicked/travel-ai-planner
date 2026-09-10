@@ -30,7 +30,14 @@ class RealPlaceProvider(PlaceProvider):
         radius_km: int = 10,
     ):
         params = {
-            "categories": "tourism,catering.restaurant,entertainment",
+            "categories": (
+                "tourism,"
+                "catering.restaurant,"
+                "entertainment,"
+                "beach,"
+                "leisure.park,"
+                "commercial"
+            ),
             "filter": (
                 f"circle:{longitude},{latitude},{radius_km * 1000}"
             ),
@@ -41,9 +48,6 @@ class RealPlaceProvider(PlaceProvider):
             "lang": "en",
             "apiKey": self.api_key,
         }
-
-        print("RADIUS KM:", radius_km)
-        print("FILTER:", params["filter"])
 
         url = (
             f"{self.BASE_URL}?"
@@ -79,21 +83,36 @@ class RealPlaceProvider(PlaceProvider):
                 return "Food"
 
             if category.startswith(
-                    "tourism.sights"
+                    "beach"
             ):
-                return "Sightseeing"
+                return "Beach"
 
             if category.startswith(
-                    "tourism.attraction"
+                    "leisure.park"
             ):
-                return "Sightseeing"
+                return "Nature"
+
+            if category.startswith(
+                    "commercial"
+            ):
+                return "Shopping"
 
             if category.startswith(
                     "entertainment"
             ):
-                return "Entertainment"
+                return "Nightlife"
 
-        return "Tourism"
+            if category.startswith(
+                    "tourism.sights"
+            ):
+                return "Culture"
+
+            if category.startswith(
+                    "tourism.attraction"
+            ):
+                return "Culture"
+
+        return "Culture"
 
     def _build_place(
             self,

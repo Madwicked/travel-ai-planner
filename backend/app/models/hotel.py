@@ -21,6 +21,7 @@ class TripHotel(Base):
     price_per_night = Column(Float, nullable=False)
     nights = Column(Integer, nullable=False)
     total_price = Column(Float, nullable=False)
+    currency = Column(String(3), nullable=False)
 
     check_in = Column(Date, nullable=False)
     check_out = Column(Date, nullable=False)

@@ -1,10 +1,37 @@
 from sqlalchemy.orm import Session
 
 from app.models.trip import Trip
+from app.services.currency_service import currency_service
 from app.models.transport import TripTransport
 from app.schemas.trip import TransportCreate, TransportUpdate
 from app.services.transport_provider import transport_provider
 from app.services.cache_service import cache_service
+
+
+def _prepare_transport_options(
+    options,
+    trip,
+):
+    return [
+        {
+            **option,
+
+            "destination_price": currency_service.convert(
+                amount=option["price"],
+                from_currency=option["currency"],
+                to_currency=trip.destination_currency,
+            ),
+            "destination_currency": trip.destination_currency,
+
+            "user_price": currency_service.convert(
+                amount=option["price"],
+                from_currency=option["currency"],
+                to_currency=trip.user_currency,
+            ),
+            "user_currency": trip.user_currency,
+        }
+        for option in options
+    ]
 
 
 def generate_transport_options(
@@ -25,8 +52,13 @@ def generate_transport_options(
             ttl_minutes=5,
         )
 
+        options = cache_service.load_data(cache)
+
         return {
-            "options": cache_service.load_data(cache),
+            "options": _prepare_transport_options(
+                options,
+                trip,
+            ),
             "cached": True,
             "outdated": outdated,
             "fetched_at": cache.fetched_at,
@@ -49,7 +81,10 @@ def generate_transport_options(
     )
 
     return {
-        "options": options,
+        "options": _prepare_transport_options(
+            options,
+            trip,
+        ),
         "cached": False,
         "outdated": False,
         "fetched_at": cache.fetched_at,
@@ -78,8 +113,13 @@ def generate_return_transport_options(
             ttl_minutes=5,
         )
 
+        options = cache_service.load_data(cache)
+
         return {
-            "options": cache_service.load_data(cache),
+            "options": _prepare_transport_options(
+                options,
+                trip,
+            ),
             "cached": True,
             "outdated": outdated,
             "fetched_at": cache.fetched_at,
@@ -102,7 +142,10 @@ def generate_return_transport_options(
     )
 
     return {
-        "options": options,
+        "options": _prepare_transport_options(
+            options,
+            trip,
+        ),
         "cached": False,
         "outdated": False,
         "fetched_at": cache.fetched_at,
@@ -112,29 +155,24 @@ def generate_return_transport_options(
         ),
     }
 
+
 def create_transport(
     trip_id: int,
     transport: TransportCreate,
     db: Session,
 ):
-    existing_transport = (
-        db.query(TripTransport)
-        .filter(
-            TripTransport.trip_id == trip_id,
-            TripTransport.direction == transport.direction,
-        )
+    trip = (
+        db.query(Trip)
+        .filter(Trip.id == trip_id)
         .first()
     )
-
-    if existing_transport:
-        db.delete(existing_transport)
-        db.flush()
 
     new_transport = TripTransport(
         trip_id=trip_id,
         direction=transport.direction,
         transport_type=transport.transport_type,
         transport_price=transport.transport_price,
+        currency=transport.currency,
         transport_duration=transport.transport_duration,
         departure_date=transport.departure_date,
         departure_time=transport.departure_time,
@@ -145,6 +183,8 @@ def create_transport(
     )
 
     db.add(new_transport)
+    db.flush()
+
     db.commit()
     db.refresh(new_transport)
 
@@ -156,6 +196,22 @@ def create_transport(
             "direction": new_transport.direction,
             "type": new_transport.transport_type,
             "price": new_transport.transport_price,
+            "currency": new_transport.currency,
+
+            "destination_price": currency_service.convert(
+                amount=new_transport.transport_price,
+                from_currency=new_transport.currency,
+                to_currency=trip.destination_currency,
+            ),
+            "destination_currency": trip.destination_currency,
+
+            "user_price": currency_service.convert(
+                amount=new_transport.transport_price,
+                from_currency=new_transport.currency,
+                to_currency=trip.user_currency,
+            ),
+            "user_currency": trip.user_currency,
+
             "duration": new_transport.transport_duration,
             "departure_date": new_transport.departure_date,
             "departure_time": new_transport.departure_time,
@@ -193,6 +249,22 @@ def get_transports(
                 "direction": transport.direction,
                 "type": transport.transport_type,
                 "price": transport.transport_price,
+                "currency": transport.currency,
+
+                "destination_price": currency_service.convert(
+                    amount=transport.transport_price,
+                    from_currency=transport.currency,
+                    to_currency=trip.destination_currency,
+                ),
+                "destination_currency": trip.destination_currency,
+
+                "user_price": currency_service.convert(
+                    amount=transport.transport_price,
+                    from_currency=transport.currency,
+                    to_currency=trip.user_currency,
+                ),
+                "user_currency": trip.user_currency,
+
                 "duration": transport.transport_duration,
                 "departure_date": transport.departure_date,
                 "departure_time": transport.departure_time,
@@ -203,6 +275,45 @@ def get_transports(
             }
             for transport in transports
         ],
+    }
+
+
+def delete_transport(
+    trip_id: int,
+    transport_id: int,
+    db: Session,
+):
+    transport = (
+        db.query(TripTransport)
+        .filter(
+            TripTransport.id == transport_id,
+            TripTransport.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if transport is None:
+        return None
+
+    if transport.transport_type == "Flight":
+        transfer = (
+            db.query(TripTransport)
+            .filter(
+                TripTransport.trip_id == trip_id,
+                TripTransport.parent_transport_id == transport.id,
+            )
+            .first()
+        )
+
+        if transfer:
+            db.delete(transfer)
+
+    db.delete(transport)
+    db.commit()
+
+    return {
+        "message": "Transport deleted",
+        "transport_id": transport_id,
     }
 
 

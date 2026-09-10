@@ -5,6 +5,8 @@ from app.models.trip import Trip
 from app.schemas.trip import HotelCreate
 from app.services.hotel_provider import hotel_provider
 from app.services.cache_service import cache_service
+from app.services.currency_service import currency_service
+
 
 
 def generate_hotel_options(
@@ -24,8 +26,29 @@ def generate_hotel_options(
             ttl_minutes=5,
         )
 
+        options = cache_service.load_data(cache)
+
+        display_options = [
+            {
+                **option,
+                "destination_price": currency_service.convert(
+                    amount=option["total_price"],
+                    from_currency=option["currency"],
+                    to_currency=trip.destination_currency,
+                ),
+                "destination_currency": trip.destination_currency,
+                "user_price": currency_service.convert(
+                    amount=option["total_price"],
+                    from_currency=option["currency"],
+                    to_currency=trip.user_currency,
+                ),
+                "user_currency": trip.user_currency,
+            }
+            for option in options
+        ]
+
         return {
-            "options": cache_service.load_data(cache),
+            "options": display_options,
             "cached": True,
             "outdated": outdated,
             "fetched_at": cache.fetched_at,
@@ -46,8 +69,27 @@ def generate_hotel_options(
         data=options,
     )
 
+    display_options = [
+        {
+            **option,
+            "destination_price": currency_service.convert(
+                amount=option["total_price"],
+                from_currency=option["currency"],
+                to_currency=trip.destination_currency,
+            ),
+            "destination_currency": trip.destination_currency,
+            "user_price": currency_service.convert(
+                amount=option["total_price"],
+                from_currency=option["currency"],
+                to_currency=trip.user_currency,
+            ),
+            "user_currency": trip.user_currency,
+        }
+        for option in options
+    ]
+
     return {
-        "options": options,
+        "options": display_options,
         "cached": False,
         "outdated": False,
         "fetched_at": cache.fetched_at,
@@ -56,7 +98,6 @@ def generate_hotel_options(
             ttl_minutes=5,
         ),
     }
-
 
 def create_hotel(
     trip_id: int,
@@ -83,6 +124,7 @@ def create_hotel(
         price_per_night=hotel.price_per_night,
         nights=hotel.nights,
         total_price=hotel.total_price,
+        currency=hotel.currency,
         check_in=hotel.check_in,
         check_out=hotel.check_out,
     )
@@ -102,11 +144,11 @@ def create_hotel(
             "price_per_night": new_hotel.price_per_night,
             "nights": new_hotel.nights,
             "total_price": new_hotel.total_price,
+            "currency": new_hotel.currency,
             "check_in": new_hotel.check_in,
             "check_out": new_hotel.check_out,
         },
     }
-
 
 def get_hotels(
     trip_id: int,
@@ -133,9 +175,50 @@ def get_hotels(
                 "price_per_night": hotel.price_per_night,
                 "nights": hotel.nights,
                 "total_price": hotel.total_price,
+                "currency": hotel.currency,
+
+                "destination_price": currency_service.convert(
+                    amount=hotel.total_price,
+                    from_currency=hotel.currency,
+                    to_currency=trip.destination_currency,
+                ),
+                "destination_currency": trip.destination_currency,
+
+                "user_price": currency_service.convert(
+                    amount=hotel.total_price,
+                    from_currency=hotel.currency,
+                    to_currency=trip.user_currency,
+                ),
+                "user_currency": trip.user_currency,
+
                 "check_in": hotel.check_in,
                 "check_out": hotel.check_out,
             }
             for hotel in hotels
         ],
+    }
+
+def delete_hotel(
+    trip_id: int,
+    hotel_id: int,
+    db: Session,
+):
+    hotel = (
+        db.query(TripHotel)
+        .filter(
+            TripHotel.id == hotel_id,
+            TripHotel.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if hotel is None:
+        return None
+
+    db.delete(hotel)
+    db.commit()
+
+    return {
+        "message": "Hotel deleted",
+        "hotel_id": hotel_id,
     }

@@ -1,4 +1,5 @@
 from datetime import date
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -17,9 +18,8 @@ class TripCreate(BaseModel):
     end_date: date
 
     travelers: int = Field(ge=1)
-    budget: float = Field(gt=0)
 
-    interests: list[str] = Field(min_length=1)
+
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -27,6 +27,7 @@ class TripCreate(BaseModel):
             raise ValueError("end_date must be after start_date")
 
         return self
+
 
 class TransportUpdate(BaseModel):
     transport_type: str
@@ -46,10 +47,12 @@ class TripResponse(BaseModel):
     trip_id: int
     trip: TripCreate
 
+
 class TransportCreate(BaseModel):
     direction: str
     transport_type: str
     transport_price: float
+    currency: str
     transport_duration: str
 
     departure_date: date
@@ -60,6 +63,7 @@ class TransportCreate(BaseModel):
     arrival_time: str
     arrival_location: str
 
+
 class HotelCreate(BaseModel):
     name: str
     city: str
@@ -69,9 +73,11 @@ class HotelCreate(BaseModel):
     nights: int
 
     total_price: float
+    currency: str
 
     check_in: date
     check_out: date
+
 
 class PlaceCreate(BaseModel):
     external_id: str | None = None
@@ -93,3 +99,6 @@ class PlaceCreate(BaseModel):
     closing_time: str
 
     visit_duration: str | None = None
+
+class CurrencyUpdate(BaseModel):
+    user_currency: str

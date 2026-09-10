@@ -13,9 +13,9 @@ class CreateTripPage extends StatefulWidget {
 class _CreateTripPageState extends State<CreateTripPage> {
   final originController = TextEditingController();
   final destinationController = TextEditingController();
-  final budgetController = TextEditingController();
 
   Location? selectedOrigin;
+  int _citySearchRequestId = 0;
   Location? selectedDestination;
 
   bool originSelected = false;
@@ -27,17 +27,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
   int travelers = 1;
 
   bool isLoading = false;
-
-  final interests = <String>[
-    '🏛️ Culture',
-    '🍴 Food',
-    '🏖️ Beach',
-    '🌲 Nature',
-    '🎉 Nightlife',
-    '🛍️ Shopping',
-  ];
-
-  final selectedInterests = <String>{};
 
   Future<void> selectDate(bool isStartDate) async {
     final now = DateTime.now();
@@ -98,8 +87,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
         destinationController.text.trim().isEmpty ||
         startDate == null ||
         endDate == null ||
-        budgetController.text.trim().isEmpty ||
-        selectedInterests.isEmpty ||
         selectedOrigin == null ||
         selectedDestination == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,15 +102,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
     if (!endDate!.isAfter(startDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('End date must be after the start date.')),
-      );
-      return;
-    }
-
-    final budget = double.tryParse(budgetController.text.trim());
-
-    if (budget == null || budget <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid budget.')),
       );
       return;
     }
@@ -145,8 +123,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
         startDate: startDate!.toIso8601String().split('T').first,
         endDate: endDate!.toIso8601String().split('T').first,
         travelers: travelers,
-        budget: budget,
-        interests: selectedInterests.toList(),
       );
 
       if (!mounted) {
@@ -180,7 +156,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
   void dispose() {
     originController.dispose();
     destinationController.dispose();
-    budgetController.dispose();
     super.dispose();
   }
 
@@ -225,11 +200,17 @@ class _CreateTripPageState extends State<CreateTripPage> {
                 optionsBuilder: (TextEditingValue textEditingValue) async {
                   final query = textEditingValue.text.trim();
 
-                  if (query.isEmpty || originSelected) {
+                  if (query.length < 2 || originSelected) {
                     return const Iterable<Location>.empty();
                   }
 
+                  final requestId = ++_citySearchRequestId;
+
                   final cities = await ApiService.searchCities(query);
+
+                  if (requestId != _citySearchRequestId) {
+                    return const Iterable<Location>.empty();
+                  }
 
                   return cities.map((city) => Location.fromJson(city));
                 },
@@ -269,6 +250,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
                                     originController.clear();
                                     selectedOrigin = null;
                                     originSelected = false;
+
                                     setState(() {});
                                   },
                                 )
@@ -322,11 +304,23 @@ class _CreateTripPageState extends State<CreateTripPage> {
                 optionsBuilder: (TextEditingValue textEditingValue) async {
                   final query = textEditingValue.text.trim();
 
-                  if (query.isEmpty || destinationSelected) {
+                  if (query.length < 2 || destinationSelected) {
+                    return const Iterable<Location>.empty();
+                  }
+
+                  final requestId = ++_citySearchRequestId;
+
+                  await Future.delayed(const Duration(milliseconds: 400));
+
+                  if (requestId != _citySearchRequestId) {
                     return const Iterable<Location>.empty();
                   }
 
                   final cities = await ApiService.searchCities(query);
+
+                  if (requestId != _citySearchRequestId) {
+                    return const Iterable<Location>.empty();
+                  }
 
                   return cities.map((city) => Location.fromJson(city));
                 },
@@ -366,6 +360,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
                                     destinationController.clear();
                                     selectedDestination = null;
                                     destinationSelected = false;
+
                                     setState(() {});
                                   },
                                 )
@@ -486,60 +481,6 @@ class _CreateTripPageState extends State<CreateTripPage> {
                     ),
                   ],
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                'Budget (€)',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-
-              const SizedBox(height: 8),
-
-              TextField(
-                controller: budgetController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  hintText: 'e.g. 1000',
-                  prefixIcon: const Icon(Icons.euro),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                'Interests',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-
-              const SizedBox(height: 10),
-
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: interests.map((interest) {
-                  final isSelected = selectedInterests.contains(interest);
-
-                  return FilterChip(
-                    label: Text(interest),
-                    selected: isSelected,
-                    onSelected: isLoading
-                        ? null
-                        : (selected) {
-                            setState(() {
-                              if (selected) {
-                                selectedInterests.add(interest);
-                              } else {
-                                selectedInterests.remove(interest);
-                              }
-                            });
-                          },
-                  );
-                }).toList(),
               ),
 
               const SizedBox(height: 32),

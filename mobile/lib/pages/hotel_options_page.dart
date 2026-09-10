@@ -124,6 +124,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
     final filtered = filteredOptions;
 
+    final destinationCurrency = widget.trip['destination_currency'] ?? 'EUR';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -181,9 +183,18 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                     setState(() {});
                   },
                   decoration: InputDecoration(
-                    labelText: 'From €',
+                    labelText: 'From per night €',
                     hintText: 'Min',
                     prefixIcon: const Icon(Icons.euro),
+                    suffixIcon: minPriceController.text.isNotEmpty
+                        ? IconButton(
+                            onPressed: () {
+                              minPriceController.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.clear),
+                          )
+                        : null,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -203,9 +214,18 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                     setState(() {});
                   },
                   decoration: InputDecoration(
-                    labelText: 'To €',
+                    labelText: 'To per night €',
                     hintText: 'Max',
                     prefixIcon: const Icon(Icons.euro),
+                    suffixIcon: maxPriceController.text.isNotEmpty
+                        ? IconButton(
+                            onPressed: () {
+                              maxPriceController.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.clear),
+                          )
+                        : null,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -335,7 +355,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '€${option.totalPrice}',
+                              '${option.destinationPrice} $destinationCurrency',
                               style: const TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
@@ -345,7 +365,17 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                             const SizedBox(height: 4),
 
                             Text(
-                              '€${option.pricePerNight}/night',
+                              '${option.userPrice} ${option.userCurrency}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+
+                            const SizedBox(height: 4),
+
+                            Text(
+                              '${option.pricePerNight} ${option.currency}/night',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey.shade600,

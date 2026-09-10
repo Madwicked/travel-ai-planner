@@ -14,6 +14,15 @@ class Trip(Base):
 
     destination = Column(String(255), nullable=False)
     destination_country = Column(String(100), nullable=True)
+    destination_currency = Column(
+        String(3),
+        nullable=True,
+    )
+
+    user_currency = Column(
+        String(3),
+        nullable=True,
+    )
     destination_latitude = Column(Float, nullable=True)
     destination_longitude = Column(Float, nullable=True)
 
@@ -21,8 +30,8 @@ class Trip(Base):
     end_date = Column(Date, nullable=False)
 
     travelers = Column(Integer, nullable=False)
-    budget = Column(Float, nullable=False)
-    interests = Column(Text, nullable=False)
+    budget = Column(Float, nullable=True)
+    interests = Column(Text, nullable=True)
 
     transport_type = Column(String(50), nullable=True)
     transport_price = Column(Float, nullable=True)

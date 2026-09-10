@@ -7,6 +7,7 @@ import 'transport_options_page.dart';
 import '../models/hotel.dart';
 import '../models/place.dart';
 import '../models/transport.dart';
+import '../services/api_service.dart';
 import '../services/hotel_service.dart';
 import '../services/place_service.dart';
 import '../services/transport_service.dart';
@@ -21,8 +22,8 @@ class TripDetailsPage extends StatefulWidget {
 }
 
 class _TripDetailsPageState extends State<TripDetailsPage> {
-  Transport? selectedOutboundTransport;
-  Transport? selectedReturnTransport;
+  List<Transport> selectedOutboundTransports = [];
+  List<Transport> selectedReturnTransports = [];
 
   Hotel? selectedHotel;
 
@@ -32,13 +33,79 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   bool isLoadingHotel = true;
   bool isLoadingPlaces = true;
 
+  String? selectedUserCurrency;
+  bool isSavingCurrency = false;
+
+  final List<String> currencies = [
+    'EUR',
+    'USD',
+    'GBP',
+    'RSD',
+    'CHF',
+    'CAD',
+    'AUD',
+    'JPY',
+    'CNY',
+    'TRY',
+    'AED',
+    'THB',
+  ];
+
   @override
   void initState() {
     super.initState();
 
+    print('TRIP USER CURRENCY: ${widget.trip['user_currency']}');
+    print('TRIP DESTINATION CURRENCY: ${widget.trip['destination_currency']}');
+
+    selectedUserCurrency = widget.trip['user_currency'];
+
     loadSelectedTransports();
     loadSelectedHotel();
     loadSelectedPlaces();
+  }
+
+  // =========================
+  // CURRENCY
+  // =========================
+
+  Future<void> saveUserCurrency(String currency) async {
+    final tripId = widget.trip['id'];
+
+    setState(() {
+      isSavingCurrency = true;
+    });
+
+    try {
+      await ApiService.updateUserCurrency(
+        tripId: tripId,
+        userCurrency: currency,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        selectedUserCurrency = currency;
+        widget.trip['user_currency'] = currency;
+        isSavingCurrency = false;
+      });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Currency saved')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        isSavingCurrency = false;
+      });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to save currency: $e')));
+    }
   }
 
   // =========================
@@ -54,15 +121,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       if (!mounted) return;
 
       setState(() {
-        for (final transport in transports) {
-          if (transport.direction == 'outbound') {
-            selectedOutboundTransport = transport;
-          }
+        selectedOutboundTransports = transports
+            .where((transport) => transport.direction == 'outbound')
+            .toList();
 
-          if (transport.direction == 'return') {
-            selectedReturnTransport = transport;
-          }
-        }
+        selectedReturnTransports = transports
+            .where((transport) => transport.direction == 'return')
+            .toList();
 
         isLoadingTransport = false;
       });
@@ -106,13 +171,20 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final transport = result as Transport;
 
+    for (final oldTransport in selectedOutboundTransports) {
+      if (oldTransport.type != 'Transfer') {
+        await TransportService.deleteTransport(
+          tripId: widget.trip['id'],
+          transportId: oldTransport.id!,
+        );
+      }
+    }
+
     await saveTransport(transport);
 
     if (!context.mounted) return;
 
-    setState(() {
-      selectedOutboundTransport = transport;
-    });
+    await loadSelectedTransports();
   }
 
   Future<void> chooseReturnTransport() async {
@@ -129,13 +201,242 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final transport = result as Transport;
 
+    for (final oldTransport in selectedReturnTransports) {
+      if (oldTransport.type != 'Transfer') {
+        await TransportService.deleteTransport(
+          tripId: widget.trip['id'],
+          transportId: oldTransport.id!,
+        );
+      }
+    }
+
     await saveTransport(transport);
 
     if (!context.mounted) return;
 
-    setState(() {
-      selectedReturnTransport = transport;
-    });
+    await loadSelectedTransports();
+  }
+
+  // =========================
+  // TRANSPORT CARD
+  // =========================
+
+  IconData getTransportIcon(String type) {
+    switch (type) {
+      case 'Flight':
+        return Icons.flight;
+
+      case 'Bus':
+        return Icons.directions_bus;
+
+      case 'Train':
+        return Icons.train;
+
+      case 'Transfer':
+        return Icons.directions_car;
+
+      default:
+        return Icons.directions_transit;
+    }
+  }
+
+  Widget buildTransportCard(
+    Transport transport, {
+    required VoidCallback onChange,
+  }) {
+    final bool isReturn = transport.direction == 'return';
+
+    final String departureCity = isReturn
+        ? widget.trip['destination']
+        : widget.trip['origin'];
+
+    final String arrivalCity = isReturn
+        ? widget.trip['origin']
+        : widget.trip['destination'];
+
+    String formatLocation(String city, String location) {
+      if (transport.type == 'Flight' &&
+          location.length == 3 &&
+          location == location.toUpperCase()) {
+        return '$city ($location)';
+      }
+
+      return location;
+    }
+
+    final String departureLabel = formatLocation(
+      departureCity,
+      transport.departureLocation,
+    );
+
+    final String arrivalLabel = formatLocation(
+      arrivalCity,
+      transport.arrivalLocation,
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // =========================
+            // ICON
+            // =========================
+
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                getTransportIcon(transport.type),
+                color: Colors.blue,
+                size: 28,
+              ),
+            ),
+
+            const SizedBox(width: 16),
+
+            // =========================
+            // MAIN CONTENT
+            // =========================
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // =========================
+                  // ROUTE + PRICE
+                  // =========================
+
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // =========================
+                      // ROUTE
+                      // =========================
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              departureLabel,
+                              softWrap: true,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 2),
+
+                            const Text(
+                              '↓',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 2),
+
+                            Text(
+                              arrivalLabel,
+                              softWrap: true,
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      // =========================
+                      // PRICE + CHANGE
+                      // =========================
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${transport.destinationPrice} '
+                            '${transport.destinationCurrency}',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 2),
+
+                          Text(
+                            '${transport.userPrice} '
+                            '${transport.userCurrency}',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          OutlinedButton(
+                            onPressed: onChange,
+                            child: const Text('Change'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // =========================
+                  // DATE
+                  // =========================
+                  Text(
+                    '${transport.departureDate} → '
+                    '${transport.arrivalDate}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  // =========================
+                  // TIME
+                  // =========================
+                  Text(
+                    '${transport.departureTime} → '
+                    '${transport.arrivalTime}',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  // =========================
+                  // DURATION
+                  // =========================
+                  Text(
+                    transport.duration,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // =========================
@@ -276,60 +577,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   }
 
   // =========================
-  // TRANSPORT CARD
-  // =========================
-
-  Widget buildTransportCard(
-    Transport transport, {
-    required VoidCallback onChange,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${transport.departureLocation} → '
-              '${transport.arrivalLocation}',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 6),
-
-            Text('${transport.departureDate}'),
-
-            const SizedBox(height: 4),
-
-            Text(
-              '${transport.departureTime} → '
-              '${transport.arrivalTime}',
-            ),
-
-            const SizedBox(height: 8),
-
-            Text(
-              '€${transport.price}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: onChange,
-                child: const Text('Change transport'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // =========================
   // PLACE CARD
   // =========================
 
@@ -404,7 +651,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -423,6 +669,47 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
 
+            const SizedBox(height: 24),
+
+            // =========================
+            // CURRENCY
+            // =========================
+            const Text(
+              'Currency',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 12),
+
+            Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: selectedUserCurrency,
+                  isExpanded: true,
+                  hint: const Text('Select currency'),
+                  items: currencies.map((currency) {
+                    return DropdownMenuItem<String>(
+                      value: currency,
+                      child: Text(currency),
+                    );
+                  }).toList(),
+                  onChanged: isSavingCurrency
+                      ? null
+                      : (value) {
+                          if (value != null) {
+                            saveUserCurrency(value);
+                          }
+                        },
+                ),
+              ),
+            ),
+
             const SizedBox(height: 28),
 
             // =========================
@@ -437,10 +724,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             if (isLoadingTransport)
               const Center(child: CircularProgressIndicator())
-            else if (selectedOutboundTransport != null)
-              buildTransportCard(
-                selectedOutboundTransport!,
-                onChange: chooseOutboundTransport,
+            else if (selectedOutboundTransports.isNotEmpty)
+              ...selectedOutboundTransports.map(
+                (transport) => buildTransportCard(
+                  transport,
+                  onChange: chooseOutboundTransport,
+                ),
               )
             else
               ElevatedButton(
@@ -462,10 +751,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             if (isLoadingTransport)
               const Center(child: CircularProgressIndicator())
-            else if (selectedReturnTransport != null)
-              buildTransportCard(
-                selectedReturnTransport!,
-                onChange: chooseReturnTransport,
+            else if (selectedReturnTransports.isNotEmpty)
+              ...selectedReturnTransports.map(
+                (transport) => buildTransportCard(
+                  transport,
+                  onChange: chooseReturnTransport,
+                ),
               )
             else
               ElevatedButton(
@@ -499,6 +790,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // =========================
+                      // HOTEL ICON
+                      // =========================
+
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -514,45 +809,106 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                       const SizedBox(width: 16),
 
+                      // =========================
+                      // HOTEL CONTENT
+                      // =========================
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              selectedHotel!.name,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        selectedHotel!.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+
+                                      const SizedBox(height: 6),
+
+                                      Text(
+                                        selectedHotel!.city,
+                                        style: const TextStyle(fontSize: 15),
+                                      ),
+
+                                      const SizedBox(height: 4),
+
+                                      Text(
+                                        selectedHotel!.address,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                // =========================
+                                // PRICE + CHANGE
+                                // =========================
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${selectedHotel!.destinationPrice} '
+                                      '${selectedHotel!.destinationCurrency}',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 2),
+
+                                    Text(
+                                      '${selectedHotel!.userPrice} '
+                                      '${selectedHotel!.userCurrency}',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 8),
+
+                                    OutlinedButton(
+                                      onPressed: chooseHotel,
+                                      child: const Text('Change'),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
 
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 12),
 
-                            Text(
-                              selectedHotel!.city,
-                              style: const TextStyle(fontSize: 15),
-                            ),
-
-                            const SizedBox(height: 4),
-
-                            Text(
-                              selectedHotel!.address,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-
-                            const SizedBox(height: 10),
-
+                            // =========================
+                            // HOTEL DATES
+                            // =========================
                             Text(
                               '${selectedHotel!.checkIn.day.toString().padLeft(2, '0')}.'
                               '${selectedHotel!.checkIn.month.toString().padLeft(2, '0')}.'
-                              '${selectedHotel!.checkIn.year} → '
+                              '${selectedHotel!.checkIn.year}'
+                              ' → '
                               '${selectedHotel!.checkOut.day.toString().padLeft(2, '0')}.'
                               '${selectedHotel!.checkOut.month.toString().padLeft(2, '0')}.'
                               '${selectedHotel!.checkOut.year}',
-                              style: const TextStyle(fontSize: 15),
+                              style: const TextStyle(fontSize: 14),
                             ),
 
                             const SizedBox(height: 4),
@@ -567,38 +923,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                             ),
                           ],
                         ),
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            '€${selectedHotel!.totalPrice}',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            '€${selectedHotel!.pricePerNight}/night',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          OutlinedButton(
-                            onPressed: chooseHotel,
-                            child: const Text('Change hotel'),
-                          ),
-                        ],
                       ),
                     ],
                   ),

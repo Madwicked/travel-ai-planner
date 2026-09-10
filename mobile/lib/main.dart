@@ -76,9 +76,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         trips = result;
       });
 
-      print('Trips: $trips');
-    } catch (e) {
-      print('Connection error: $e');
+      print('API TRIPS RESULT: $result');
+      print(
+        'TRIP 30 CURRENCY: ${result.firstWhere((trip) => trip['id'] == 30, orElse: () => {})['user_currency']}',
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -220,10 +221,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                       ),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(16),
-                        onTap: () {
+                        onTap: () async {
                           print('Selected trip: $trip');
 
-                          Navigator.push(
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => TripDetailsPage(
@@ -231,6 +232,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                               ),
                             ),
                           );
+
+                          if (mounted) {
+                            await getTrips();
+                          }
                         },
                         child: Padding(
                           padding: const EdgeInsets.all(16),
@@ -348,13 +353,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
                                   const Spacer(),
 
-                                  Text(
-                                    '€${trip['budget']}',
-                                    style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                                  const SizedBox.shrink(),
 
                                   const SizedBox(width: 8),
 

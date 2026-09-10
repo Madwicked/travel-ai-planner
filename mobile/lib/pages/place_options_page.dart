@@ -29,9 +29,10 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     'All',
     'Culture',
     'Food',
-    'Sightseeing',
+    'Beach',
     'Nature',
-    'Entertainment',
+    'Nightlife',
+    'Shopping',
   ];
 
   Future<void> loadPlaceOptions() async {

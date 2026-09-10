@@ -19,8 +19,6 @@ class ApiService {
     required String startDate,
     required String endDate,
     required int travelers,
-    required double budget,
-    required List<String> interests,
   }) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/trips');
 
@@ -38,8 +36,6 @@ class ApiService {
       'start_date': startDate,
       'end_date': endDate,
       'travelers': travelers,
-      'budget': budget,
-      'interests': interests,
     };
 
     final response = await http.post(
@@ -67,6 +63,23 @@ class ApiService {
     final data = jsonDecode(response.body);
 
     return data['trips'] ?? [];
+  }
+
+  static Future<void> updateUserCurrency({
+    required int tripId,
+    required String userCurrency,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/currency');
+
+    final response = await http.put(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'user_currency': userCurrency}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
   }
 
   static Future<List<dynamic>> searchCities(String query) async {

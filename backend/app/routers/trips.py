@@ -10,11 +10,13 @@ from app.services.transport import (
     generate_transport_options,
     generate_return_transport_options,
     update_transport,
+    delete_transport,
 )
 from app.services.hotels import (
     generate_hotel_options,
     create_hotel,
     get_hotels,
+    delete_hotel,
 )
 from app.services.places import (
     generate_place_options,
@@ -32,11 +34,13 @@ from app.schemas.trip import (
     TransportUpdate,
     HotelCreate,
     PlaceCreate,
+    CurrencyUpdate,
 )
 from app.services.trips import (
     create_trip,
     get_trips,
     delete_trip,
+    update_user_currency,
 )
 
 router = APIRouter(
@@ -102,6 +106,33 @@ def get_transports_endpoint(
         db=db,
     )
 
+@router.delete("/{trip_id}/transports/{transport_id}")
+def delete_transport_endpoint(
+    trip_id: int,
+    transport_id: int,
+    db: Session = Depends(get_db),
+):
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    result = delete_transport(
+        trip_id=trip_id,
+        transport_id=transport_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Transport not found",
+        )
+
+    return result
 
 @router.get("/{trip_id}/transports/options")
 def get_transport_options(
@@ -180,7 +211,6 @@ def update_transport_endpoint(
     )
 
 @router.get("/{trip_id}/hotels/options")
-@router.get("/{trip_id}/hotels/options")
 def get_hotel_options(
     trip_id: int,
     refresh: bool = False,
@@ -246,6 +276,33 @@ def get_hotels_endpoint(
         db=db,
     )
 
+@router.delete("/{trip_id}/hotels/{hotel_id}")
+def delete_hotel_endpoint(
+    trip_id: int,
+    hotel_id: int,
+    db: Session = Depends(get_db),
+):
+    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    result = delete_hotel(
+        trip_id=trip_id,
+        hotel_id=hotel_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Hotel not found",
+        )
+
+    return result
 
 @router.get("/{trip_id}/places/options")
 def get_place_options(
@@ -382,6 +439,26 @@ def get_trips_endpoint(
     db: Session = Depends(get_db),
 ):
     return get_trips(db=db)
+
+@router.put("/{trip_id}/currency")
+def update_currency_endpoint(
+    trip_id: int,
+    currency: CurrencyUpdate,
+    db: Session = Depends(get_db),
+):
+    result = update_user_currency(
+        trip_id=trip_id,
+        user_currency=currency.user_currency,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return result
 
 @router.delete("/{trip_id}")
 def delete_trip_endpoint(

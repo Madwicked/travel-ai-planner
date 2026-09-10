@@ -29,21 +29,22 @@ class MockTransportProvider(TransportProvider):
         )
 
         origin_location = (
-            f"{origin_airport['name']} ({origin_airport['iata_code']})"
+            f"{trip.origin} ({origin_airport['iata_code']})"
             if origin_airport
-            else f"{trip.origin} Airport"
+            else trip.origin
         )
 
         destination_location = (
-            f"{destination_airport['name']} ({destination_airport['iata_code']})"
+            f"{trip.destination} ({destination_airport['iata_code']})"
             if destination_airport
-            else f"{trip.destination} Airport"
+            else trip.destination
         )
 
         return [
             {
                 "type": "Flight",
                 "price": 86,
+                "currency": "EUR",
                 "duration": "2h 30m",
                 "departure_date": trip.start_date,
                 "departure_time": "10:25",
@@ -56,6 +57,7 @@ class MockTransportProvider(TransportProvider):
             {
                 "type": "Bus",
                 "price": 65,
+                "currency": "EUR",
                 "duration": "14h 30m",
                 "departure_date": trip.start_date,
                 "departure_time": "18:00",
@@ -67,6 +69,7 @@ class MockTransportProvider(TransportProvider):
             {
                 "type": "Train",
                 "price": 120,
+                "currency": "EUR",
                 "duration": "12h 15m",
                 "departure_date": trip.start_date,
                 "departure_time": "07:45",
@@ -91,21 +94,22 @@ class MockTransportProvider(TransportProvider):
         )
 
         departure_location = (
-            f"{destination_airport['name']} ({destination_airport['iata_code']})"
+            f"{trip.destination} ({destination_airport['iata_code']})"
             if destination_airport
-            else f"{trip.destination} Airport"
+            else trip.destination
         )
 
         arrival_location = (
-            f"{origin_airport['name']} ({origin_airport['iata_code']})"
+            f"{trip.origin} ({origin_airport['iata_code']})"
             if origin_airport
-            else f"{trip.origin} Airport"
+            else trip.origin
         )
 
         return [
             {
                 "type": "Flight",
                 "price": 92,
+                "currency": "EUR",
                 "duration": "2h 25m",
                 "departure_date": trip.end_date,
                 "departure_time": "14:20",
@@ -118,6 +122,7 @@ class MockTransportProvider(TransportProvider):
             {
                 "type": "Bus",
                 "price": 68,
+                "currency": "EUR",
                 "duration": "15h 10m",
                 "departure_date": trip.end_date,
                 "departure_time": "20:00",
@@ -129,6 +134,7 @@ class MockTransportProvider(TransportProvider):
             {
                 "type": "Train",
                 "price": 115,
+                "currency": "EUR",
                 "duration": "12h 40m",
                 "departure_date": trip.end_date,
                 "departure_time": "08:15",

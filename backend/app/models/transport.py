@@ -14,10 +14,17 @@ class TripTransport(Base):
         nullable=False,
     )
 
+    parent_transport_id = Column(
+        Integer,
+        ForeignKey("trip_transports.id"),
+        nullable=True,
+    )
+
     direction = Column(String(20), nullable=False)
 
     transport_type = Column(String(50), nullable=False)
     transport_price = Column(Float, nullable=False)
+    currency = Column(String(3), nullable=False)
     transport_duration = Column(String(50), nullable=False)
 
     departure_date = Column(Date, nullable=False)
