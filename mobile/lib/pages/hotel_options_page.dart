@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/hotel.dart';
 import '../services/hotel_service.dart';
 
@@ -95,8 +96,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Hotel Options',
+        title: Text(
+          context.tr('Hotel Options'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),

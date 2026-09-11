@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'l10n/app_localizations.dart';
 import 'pages/create_trip_page.dart';
 import 'pages/trip_details_page.dart';
 import 'services/api_service.dart';
@@ -17,6 +19,13 @@ class TravelAiPlannerApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Travel AI Planner',
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
@@ -107,23 +116,23 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('Delete trip?'),
+          title: Text(context.tr('Delete trip?')),
           content: Text(
             '${trip['origin']} → ${trip['destination']}\n\n'
-            'This trip and all its saved data will be deleted.',
+            '${context.tr('This trip and all its saved data will be deleted.')}',
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop(false);
               },
-              child: const Text('Cancel'),
+              child: Text(context.tr('Cancel')),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop(true);
               },
-              child: const Text('Delete'),
+              child: Text(context.tr('Delete')),
             ),
           ],
         );
@@ -146,7 +155,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       });
 
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Trip deleted.')));
+          .showSnackBar(SnackBar(content: Text(context.tr('Trip deleted.'))));
     } catch (e) {
       print('Delete trip error: $e');
 
@@ -176,8 +185,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
         title: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Travel AI Planner',
+            Text(
+              context.tr('Travel AI Planner'),
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 2),
@@ -195,9 +204,9 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
             if (isLoadingTrips)
               const Center(child: CircularProgressIndicator())
             else if (trips.isEmpty)
-              const Center(
+              Center(
                 child: Text(
-                  'No trips yet',
+                  context.tr('No trips yet'),
                   style: TextStyle(fontSize: 20, color: Colors.grey),
                 ),
               )
@@ -205,8 +214,8 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               ListView(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
                 children: [
-                  const Text(
-                    'My Trips',
+                  Text(
+                    context.tr('My Trips'),
                     style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
 
@@ -348,7 +357,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
 
                                   Text(
                                     '${trip['travelers']} '
-                                    '${trip['travelers'] == 1 ? 'traveler' : 'travelers'}',
+                                    '${context.tr(trip['travelers'] == 1 ? 'traveler' : 'travelers')}',
                                   ),
 
                                   const Spacer(),
@@ -358,7 +367,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
                                   const SizedBox(width: 8),
 
                                   IconButton(
-                                    tooltip: 'Delete trip',
+                                    tooltip: context.tr('Delete trip'),
                                     onPressed: () {
                                       deleteTrip(
                                         Map<String, dynamic>.from(trip),
@@ -385,7 +394,7 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               bottom: 20,
               child: FloatingActionButton(
                 onPressed: createTrip,
-                tooltip: 'Create trip',
+                tooltip: context.tr('Create trip'),
                 child: const Icon(Icons.add),
               ),
             ),

@@ -6,7 +6,7 @@ import requests
 
 class LocationProvider(ABC):
     @abstractmethod
-    def search_cities(self, query: str):
+    def search_cities(self, query: str, language_code: str = "en"):
         pass
 
 
@@ -14,7 +14,7 @@ class GeoapifyLocationProvider(LocationProvider):
     def __init__(self):
         self.api_key = os.getenv("GEOAPIFY_API_KEY")
 
-    def search_cities(self, query: str):
+    def search_cities(self, query: str, language_code: str = "en"):
         query = query.strip()
 
         if not query:
@@ -31,7 +31,7 @@ class GeoapifyLocationProvider(LocationProvider):
             "text": query,
             "type": "city",
             "limit": 10,
-            "lang": "en",
+            "lang": language_code if language_code in {"en", "ru"} else "en",
             "apiKey": self.api_key,
         }
 

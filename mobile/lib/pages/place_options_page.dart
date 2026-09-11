@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
 
@@ -311,8 +312,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Places to Visit',
+        title: Text(
+          context.tr('Places to Visit'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -330,8 +331,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                     onPressed: selectedIndexes.isEmpty ? null : savePlaces,
                     child: Text(
                       selectedIndexes.isEmpty
-                          ? 'Save Places'
-                          : 'Save Places '
+                          ? context.tr('Save Places')
+                          : '${context.tr('Save Places')} '
                                 '(${selectedIndexes.length})',
                     ),
                   ),

@@ -1,16 +1,16 @@
 import 'dart:convert';
+
 import '../api_config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../l10n/app_localizations.dart';
+
 class ItineraryPage extends StatefulWidget {
   final Map<String, dynamic> trip;
 
-  const ItineraryPage({
-    super.key,
-    required this.trip,
-  });
+  const ItineraryPage({super.key, required this.trip});
 
   @override
   State<ItineraryPage> createState() => _ItineraryPageState();
@@ -30,9 +30,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
   Future<void> loadItinerary() async {
     final tripId = widget.trip['id'];
 
-    final url = Uri.parse(
-      '${ApiConfig.baseUrl}/api/trips/$tripId/itinerary',
-    );
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/itinerary');
 
     try {
       final response = await http.get(url);
@@ -50,8 +48,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
         });
       } else {
         setState(() {
-          errorMessage =
-              'Server error: ${response.statusCode}';
+          errorMessage = 'Server error: ${response.statusCode}';
           isLoading = false;
         });
       }
@@ -82,42 +79,35 @@ class _ItineraryPageState extends State<ItineraryPage> {
     }
   }
 
-  String getSectionTitle(String section) {
+  String getSectionTitle(BuildContext context, String section) {
     switch (section) {
       case 'morning':
-        return 'Morning';
+        return context.tr('Morning');
       case 'lunch':
-        return 'Lunch';
+        return context.tr('Lunch');
       case 'afternoon':
-        return 'Afternoon';
+        return context.tr('Afternoon');
       case 'evening':
-        return 'Evening';
+        return context.tr('Evening');
       default:
         return section;
     }
   }
 
-  Widget buildActivity(
-    String section,
-    String text,
-  ) {
+  Widget buildActivity(String section, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            getActivityIcon(section),
-            size: 22,
-            color: Colors.blue,
-          ),
+          Icon(getActivityIcon(section), size: 22, color: Colors.blue),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  getSectionTitle(section),
+                  getSectionTitle(context, section),
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
@@ -126,10 +116,7 @@ class _ItineraryPageState extends State<ItineraryPage> {
                 const SizedBox(height: 4),
                 Text(
                   text,
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Colors.grey.shade700,
-                  ),
+                  style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
                 ),
               ],
             ),
@@ -145,119 +132,89 @@ class _ItineraryPageState extends State<ItineraryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'AI Itinerary',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+        title: Text(
+          context.tr('AI Itinerary'),
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
       body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      errorMessage!,
-                      textAlign: TextAlign.center,
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(errorMessage!, textAlign: TextAlign.center),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    destination,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        destination,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
 
-                      const SizedBox(height: 8),
+                  const SizedBox(height: 8),
 
-                      Text(
-                        'Your personalized trip itinerary',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-
-                      const SizedBox(height: 28),
-
-                      ...itinerary.map(
-                        (day) => Card(
-                          margin: const EdgeInsets.only(
-                            bottom: 20,
-                          ),
-                          elevation: 2,
-                          shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(16),
-                          ),
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Day ${day['day']}',
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight:
-                                        FontWeight.bold,
-                                  ),
-                                ),
-
-                                const SizedBox(height: 4),
-
-                                Text(
-                                  day['title'],
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color:
-                                        Colors.grey.shade600,
-                                  ),
-                                ),
-
-                                const SizedBox(height: 20),
-
-                                buildActivity(
-                                  'morning',
-                                  day['morning'],
-                                ),
-
-                                buildActivity(
-                                  'lunch',
-                                  day['lunch'],
-                                ),
-
-                                buildActivity(
-                                  'afternoon',
-                                  day['afternoon'],
-                                ),
-
-                                buildActivity(
-                                  'evening',
-                                  day['evening'],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    context.tr('Your personalized trip itinerary'),
+                    style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                   ),
-                ),
+
+                  const SizedBox(height: 28),
+
+                  ...itinerary.map(
+                    (day) => Card(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Day ${day['day']}',
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+
+                            const SizedBox(height: 4),
+
+                            Text(
+                              day['title'],
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            buildActivity('morning', day['morning']),
+
+                            buildActivity('lunch', day['lunch']),
+
+                            buildActivity('afternoon', day['afternoon']),
+
+                            buildActivity('evening', day['evening']),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

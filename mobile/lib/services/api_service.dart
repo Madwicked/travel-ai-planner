@@ -82,9 +82,12 @@ class ApiService {
     }
   }
 
-  static Future<List<dynamic>> searchCities(String query) async {
+  static Future<List<dynamic>> searchCities(
+    String query, {
+    String languageCode = 'en',
+  }) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/locations/search')
-        .replace(queryParameters: {'q': query});
+        .replace(queryParameters: {'q': query, 'lang': languageCode});
 
     final response = await http.get(url);
 

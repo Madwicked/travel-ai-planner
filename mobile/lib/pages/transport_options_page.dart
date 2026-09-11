@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/transport.dart';
 import '../services/transport_service.dart';
 
@@ -101,7 +102,9 @@ class _TransportOptionsPageState extends State<TransportOptionsPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isReturnTransport ? 'Return Transport' : 'Transport Options',
+          context.tr(
+            isReturnTransport ? 'Return Transport' : 'Transport Options',
+          ),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -141,8 +144,8 @@ class _TransportOptionsPageState extends State<TransportOptionsPage> {
           const SizedBox(height: 8),
           Text(
             isReturnTransport
-                ? 'Choose how you want to get back'
-                : 'Choose how you want to get there',
+                ? context.tr('Choose how you want to get back')
+                : context.tr('Choose how you want to get there'),
             style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 28),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/location.dart';
 import '../services/api_service.dart';
 
@@ -72,9 +73,9 @@ class _CreateTripPageState extends State<CreateTripPage> {
     });
   }
 
-  String formatDate(DateTime? date) {
+  String formatDate(BuildContext context, DateTime? date) {
     if (date == null) {
-      return 'Select date';
+      return context.tr('Select date');
     }
 
     return '${date.day.toString().padLeft(2, '0')}.'
@@ -90,9 +91,11 @@ class _CreateTripPageState extends State<CreateTripPage> {
         selectedOrigin == null ||
         selectedDestination == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Please select cities from the suggestions and fill in all fields.',
+            context.tr(
+              'Please select cities from the suggestions and fill in all fields.',
+            ),
           ),
         ),
       );
@@ -101,7 +104,9 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
     if (!endDate!.isAfter(startDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('End date must be after the start date.')),
+        SnackBar(
+          content: Text(context.tr('End date must be after the start date.')),
+        ),
       );
       return;
     }
@@ -163,8 +168,8 @@ class _CreateTripPageState extends State<CreateTripPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Create Trip',
+        title: Text(
+          context.tr('Create Trip'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -174,23 +179,24 @@ class _CreateTripPageState extends State<CreateTripPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Plan your perfect trip ✈️',
+              Text(
+                context.tr('Plan your perfect trip ✈️'),
                 style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
 
               const SizedBox(height: 8),
 
               Text(
-                'Tell us about your trip and AI will create '
-                'a personalized itinerary.',
+                context.tr(
+                  'Tell us about your trip and AI will create a personalized itinerary.',
+                ),
                 style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
               ),
 
               const SizedBox(height: 28),
 
-              const Text(
-                'From',
+              Text(
+                context.tr('From'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
 
@@ -206,7 +212,10 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
                   final requestId = ++_citySearchRequestId;
 
-                  final cities = await ApiService.searchCities(query);
+                  final cities = await ApiService.searchCities(
+                    query,
+                    languageCode: Localizations.localeOf(context).languageCode,
+                  );
 
                   if (requestId != _citySearchRequestId) {
                     return const Iterable<Location>.empty();
@@ -293,8 +302,8 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
               const SizedBox(height: 20),
 
-              const Text(
-                'To',
+              Text(
+                context.tr('To'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
 
@@ -316,7 +325,10 @@ class _CreateTripPageState extends State<CreateTripPage> {
                     return const Iterable<Location>.empty();
                   }
 
-                  final cities = await ApiService.searchCities(query);
+                  final cities = await ApiService.searchCities(
+                    query,
+                    languageCode: Localizations.localeOf(context).languageCode,
+                  );
 
                   if (requestId != _citySearchRequestId) {
                     return const Iterable<Location>.empty();
@@ -403,8 +415,8 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
               const SizedBox(height: 20),
 
-              const Text(
-                'Travel dates',
+              Text(
+                context.tr('Travel dates'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
 
@@ -416,7 +428,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
                     child: OutlinedButton.icon(
                       onPressed: isLoading ? null : () => selectDate(true),
                       icon: const Icon(Icons.calendar_today),
-                      label: Text(formatDate(startDate)),
+                      label: Text(formatDate(context, startDate)),
                     ),
                   ),
 
@@ -426,7 +438,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
                     child: OutlinedButton.icon(
                       onPressed: isLoading ? null : () => selectDate(false),
                       icon: const Icon(Icons.calendar_today),
-                      label: Text(formatDate(endDate)),
+                      label: Text(formatDate(context, endDate)),
                     ),
                   ),
                 ],
@@ -434,8 +446,8 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
               const SizedBox(height: 20),
 
-              const Text(
-                'Travelers',
+              Text(
+                context.tr('Travelers'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
 
@@ -462,7 +474,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
 
                     Text(
                       '$travelers '
-                      '${travelers == 1 ? 'traveler' : 'travelers'}',
+                      '${context.tr(travelers == 1 ? 'traveler' : 'travelers')}',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -498,7 +510,9 @@ class _CreateTripPageState extends State<CreateTripPage> {
                         )
                       : const Icon(Icons.auto_awesome),
                   label: Text(
-                    isLoading ? 'Generating...' : 'Generate My Trip',
+                    context.tr(
+                      isLoading ? 'Generating...' : 'Generate My Trip',
+                    ),
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,

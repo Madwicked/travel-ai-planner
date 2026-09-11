@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import 'hotel_options_page.dart';
 import 'itinerary_page.dart';
 import 'place_options_page.dart';
@@ -646,8 +647,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Trip Details',
+        title: Text(
+          context.tr('Trip Details'),
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
@@ -674,8 +675,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             // =========================
             // CURRENCY
             // =========================
-            const Text(
-              'Currency',
+            Text(
+              context.tr('Currency'),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
@@ -692,7 +693,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 child: DropdownButton<String>(
                   value: selectedUserCurrency,
                   isExpanded: true,
-                  hint: const Text('Select currency'),
+                  hint: Text(context.tr('Select currency')),
                   items: currencies.map((currency) {
                     return DropdownMenuItem<String>(
                       value: currency,
@@ -715,8 +716,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             // =========================
             // OUTBOUND TRANSPORT
             // =========================
-            const Text(
-              'Outbound Transport',
+            Text(
+              context.tr('Outbound Transport'),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
@@ -734,7 +735,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             else
               ElevatedButton(
                 onPressed: chooseOutboundTransport,
-                child: const Text('Choose outbound transport'),
+                child: Text(context.tr('Choose outbound transport')),
               ),
 
             const SizedBox(height: 24),
@@ -742,8 +743,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             // =========================
             // RETURN TRANSPORT
             // =========================
-            const Text(
-              'Return Transport',
+            Text(
+              context.tr('Return Transport'),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
@@ -761,7 +762,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             else
               ElevatedButton(
                 onPressed: chooseReturnTransport,
-                child: const Text('Choose return transport'),
+                child: Text(context.tr('Choose return transport')),
               ),
 
             const SizedBox(height: 24),
@@ -769,8 +770,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             // =========================
             // HOTEL
             // =========================
-            const Text(
-              'Hotel',
+            Text(
+              context.tr('Hotel'),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
@@ -931,7 +932,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             else
               ElevatedButton(
                 onPressed: chooseHotel,
-                child: const Text('Choose hotel'),
+                child: Text(context.tr('Choose hotel')),
               ),
 
             const SizedBox(height: 24),
@@ -939,8 +940,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             // =========================
             // PLACES
             // =========================
-            const Text(
-              'Places',
+            Text(
+              context.tr('Places'),
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
 
@@ -970,13 +971,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: choosePlaces,
-                  child: const Text('Change places'),
+                  child: Text(context.tr('Change places')),
                 ),
               ),
             ] else
               ElevatedButton(
                 onPressed: choosePlaces,
-                child: const Text('Choose places'),
+                child: Text(context.tr('Choose places')),
               ),
 
             const SizedBox(height: 24),
@@ -995,7 +996,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                     ),
                   );
                 },
-                child: const Text('View itinerary'),
+                child: Text(context.tr('View itinerary')),
               ),
             ),
           ],
