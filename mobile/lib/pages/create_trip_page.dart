@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/location.dart';
 import '../services/api_service.dart';
@@ -27,6 +28,62 @@ class _CreateTripPageState extends State<CreateTripPage> {
   int travelers = 1;
 
   bool isLoading = false;
+
+  Future<String> getUserCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedCurrency = prefs.getString('user_currency');
+
+    if (savedCurrency != null && savedCurrency.isNotEmpty) {
+      return savedCurrency;
+    }
+
+    final locale = WidgetsBinding.instance.platformDispatcher.locale;
+
+    String currency;
+
+    switch (locale.countryCode) {
+      case 'RS':
+        currency = 'RSD';
+        break;
+      case 'US':
+        currency = 'USD';
+        break;
+      case 'GB':
+        currency = 'GBP';
+        break;
+      case 'CH':
+        currency = 'CHF';
+        break;
+      case 'CA':
+        currency = 'CAD';
+        break;
+      case 'AU':
+        currency = 'AUD';
+        break;
+      case 'JP':
+        currency = 'JPY';
+        break;
+      case 'CN':
+        currency = 'CNY';
+        break;
+      case 'TR':
+        currency = 'TRY';
+        break;
+      case 'AE':
+        currency = 'AED';
+        break;
+      case 'TH':
+        currency = 'THB';
+        break;
+      default:
+        currency = 'EUR';
+    }
+
+    await prefs.setString('user_currency', currency);
+
+    return currency;
+  }
 
   Future<void> selectDate(bool isStartDate) async {
     final now = DateTime.now();
@@ -111,6 +168,8 @@ class _CreateTripPageState extends State<CreateTripPage> {
     });
 
     try {
+      final userCurrency = await getUserCurrency();
+
       final data = await ApiService.createTrip(
         origin: selectedOrigin!.name,
         originCountry: selectedOrigin!.country,
@@ -125,13 +184,19 @@ class _CreateTripPageState extends State<CreateTripPage> {
         travelers: travelers,
       );
 
+      final tripId = data['trip_id'];
+
+      await ApiService.updateUserCurrency(
+        tripId: tripId,
+        userCurrency: userCurrency,
+      );
+
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Trip created! ID: ${data['trip_id']}')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Trip created! ID: $tripId')));
 
       Navigator.of(context).pop(true);
     } catch (e) {

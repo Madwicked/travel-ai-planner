@@ -129,6 +129,10 @@ def create_hotel(
         check_out=hotel.check_out,
     )
 
+    db.add(new_hotel)
+    db.commit()
+    db.refresh(new_hotel)
+
     trip = (
         db.query(Trip)
         .filter(Trip.id == trip_id)

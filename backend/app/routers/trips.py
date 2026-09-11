@@ -35,13 +35,16 @@ from app.schemas.trip import (
     HotelCreate,
     PlaceCreate,
     CurrencyUpdate,
+    FoodPreferenceUpdate,
 )
 from app.services.trips import (
     create_trip,
     get_trips,
     delete_trip,
     update_user_currency,
+    update_food_preference,
 )
+from app.services.budget import calculate_budget
 
 router = APIRouter(
     prefix="/api/trips",
@@ -449,6 +452,44 @@ def update_currency_endpoint(
     result = update_user_currency(
         trip_id=trip_id,
         user_currency=currency.user_currency,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return result
+
+@router.put("/{trip_id}/food")
+def update_food_preference_endpoint(
+    trip_id: int,
+    food: FoodPreferenceUpdate,
+    db: Session = Depends(get_db),
+):
+    result = update_food_preference(
+        trip_id=trip_id,
+        food_preference=food.food_preference,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return result
+
+@router.get("/{trip_id}/budget")
+def get_budget_endpoint(
+    trip_id: int,
+    db: Session = Depends(get_db),
+):
+    result = calculate_budget(
+        trip_id=trip_id,
         db=db,
     )
 

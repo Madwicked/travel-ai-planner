@@ -102,3 +102,6 @@ class PlaceCreate(BaseModel):
 
 class CurrencyUpdate(BaseModel):
     user_currency: str
+
+class FoodPreferenceUpdate(BaseModel):
+    food_preference: str

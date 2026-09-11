@@ -30,6 +30,7 @@ class Trip(Base):
     end_date = Column(Date, nullable=False)
 
     travelers = Column(Integer, nullable=False)
+    food_preference = Column(String(50), nullable=True)
     budget = Column(Float, nullable=True)
     interests = Column(Text, nullable=True)
 

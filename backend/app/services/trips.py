@@ -8,6 +8,7 @@ from app.schemas.trip import TripCreate
 from app.models.api_cache import ApiCache
 
 
+
 COUNTRY_CURRENCIES = {
     "Italy": "EUR",
     "France": "EUR",
@@ -111,6 +112,7 @@ def get_trips(
                 "travelers": trip.travelers,
                 "budget": trip.budget,
                 "interests": trip.interests,
+                "food_preference": trip.food_preference,
                 "destination_currency": trip.destination_currency,
                 "user_currency": trip.user_currency,
             }
@@ -141,6 +143,31 @@ def update_user_currency(
         "message": "User currency updated",
         "trip_id": trip.id,
         "user_currency": trip.user_currency,
+    }
+
+def update_food_preference(
+    trip_id: int,
+    food_preference: str,
+    db: Session,
+):
+    trip = (
+        db.query(Trip)
+        .filter(Trip.id == trip_id)
+        .first()
+    )
+
+    if not trip:
+        return None
+
+    trip.food_preference = food_preference
+
+    db.commit()
+    db.refresh(trip)
+
+    return {
+        "message": "Food preference updated",
+        "trip_id": trip.id,
+        "food_preference": trip.food_preference,
     }
 
 def delete_trip(

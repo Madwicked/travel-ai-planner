@@ -29,83 +29,37 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   List<Place> selectedPlaces = [];
 
+  String foodPreference = 'Mixed';
+
+  final List<String> foodPreferences = [
+    'Fast food',
+    'Budget restaurant',
+    'Mid-range restaurant',
+    'Mixed',
+  ];
+
   bool isLoadingTransport = true;
   bool isLoadingHotel = true;
   bool isLoadingPlaces = true;
 
-  String? selectedUserCurrency;
-  bool isSavingCurrency = false;
-
-  final List<String> currencies = [
-    'EUR',
-    'USD',
-    'GBP',
-    'RSD',
-    'CHF',
-    'CAD',
-    'AUD',
-    'JPY',
-    'CNY',
-    'TRY',
-    'AED',
-    'THB',
-  ];
+  Map<String, dynamic>? budget;
+  bool isLoadingBudget = true;
 
   @override
   void initState() {
     super.initState();
 
-    print('TRIP USER CURRENCY: ${widget.trip['user_currency']}');
-    print('TRIP DESTINATION CURRENCY: ${widget.trip['destination_currency']}');
+    final savedFoodPreference = widget.trip['food_preference'];
 
-    selectedUserCurrency = widget.trip['user_currency'];
+    if (savedFoodPreference != null &&
+        foodPreferences.contains(savedFoodPreference)) {
+      foodPreference = savedFoodPreference;
+    }
 
     loadSelectedTransports();
     loadSelectedHotel();
     loadSelectedPlaces();
-  }
-
-  // =========================
-  // CURRENCY
-  // =========================
-
-  Future<void> saveUserCurrency(String currency) async {
-    final tripId = widget.trip['id'];
-
-    setState(() {
-      isSavingCurrency = true;
-    });
-
-    try {
-      await ApiService.updateUserCurrency(
-        tripId: tripId,
-        userCurrency: currency,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        selectedUserCurrency = currency;
-        widget.trip['user_currency'] = currency;
-        isSavingCurrency = false;
-      });
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Currency saved')));
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        isSavingCurrency = false;
-      });
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to save currency: $e')));
-    }
+    loadBudget();
   }
 
   // =========================
@@ -140,7 +94,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Future<void> saveTransport(Transport transport) async {
+  Future<bool> saveTransport(Transport transport) async {
     final tripId = widget.trip['id'];
 
     try {
@@ -148,12 +102,16 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         tripId: tripId,
         transport: transport,
       );
+
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to save transport: $e')));
+
+      return false;
     }
   }
 
@@ -180,11 +138,14 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       }
     }
 
-    await saveTransport(transport);
+    final saved = await saveTransport(transport);
 
-    if (!context.mounted) return;
+    if (!saved || !context.mounted) {
+      return;
+    }
 
     await loadSelectedTransports();
+    await loadBudget();
   }
 
   Future<void> chooseReturnTransport() async {
@@ -210,11 +171,14 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       }
     }
 
-    await saveTransport(transport);
+    final saved = await saveTransport(transport);
 
-    if (!context.mounted) return;
+    if (!saved || !context.mounted) {
+      return;
+    }
 
     await loadSelectedTransports();
+    await loadBudget();
   }
 
   // =========================
@@ -283,10 +247,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // =========================
-            // ICON
-            // =========================
-
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -302,24 +262,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             const SizedBox(width: 16),
 
-            // =========================
-            // MAIN CONTENT
-            // =========================
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // =========================
-                  // ROUTE + PRICE
-                  // =========================
-
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // =========================
-                      // ROUTE
-                      // =========================
-
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -359,9 +308,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                       const SizedBox(width: 12),
 
-                      // =========================
-                      // PRICE + CHANGE
-                      // =========================
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
@@ -401,9 +347,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                   const SizedBox(height: 12),
 
-                  // =========================
-                  // DATE
-                  // =========================
                   Text(
                     '${transport.departureDate} → '
                     '${transport.arrivalDate}',
@@ -412,9 +355,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                   const SizedBox(height: 4),
 
-                  // =========================
-                  // TIME
-                  // =========================
                   Text(
                     '${transport.departureTime} → '
                     '${transport.arrivalTime}',
@@ -423,9 +363,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                   const SizedBox(height: 4),
 
-                  // =========================
-                  // DURATION
-                  // =========================
                   Text(
                     transport.duration,
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
@@ -495,6 +432,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         selectedHotel = savedHotel;
       });
 
+      await loadBudget();
+
+      if (!context.mounted) return;
+
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Hotel saved')));
     } catch (e) {
@@ -503,6 +444,67 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to save hotel: $e')));
     }
+  }
+
+  // =========================
+  // BUDGET
+  // =========================
+
+  Future<void> loadBudget() async {
+    try {
+      final tripId = widget.trip['id'];
+
+      final data = await ApiService.getBudget(tripId: tripId);
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        budget = data;
+        isLoadingBudget = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        isLoadingBudget = false;
+      });
+    }
+  }
+
+  Widget _buildBudgetRow(String title, dynamic value, {bool isTotal = false}) {
+    if (value == null) {
+      return const SizedBox.shrink();
+    }
+
+    final amount = value['amount'];
+    final currency = value['currency'];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: isTotal ? 16 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            '${amount.toStringAsFixed(2)} $currency',
+            style: TextStyle(
+              fontSize: isTotal ? 16 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // =========================
@@ -672,47 +674,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 24),
 
             // =========================
-            // CURRENCY
-            // =========================
-            const Text(
-              'Currency',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            Container(
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: selectedUserCurrency,
-                  isExpanded: true,
-                  hint: const Text('Select currency'),
-                  items: currencies.map((currency) {
-                    return DropdownMenuItem<String>(
-                      value: currency,
-                      child: Text(currency),
-                    );
-                  }).toList(),
-                  onChanged: isSavingCurrency
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            saveUserCurrency(value);
-                          }
-                        },
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 28),
-
-            // =========================
             // OUTBOUND TRANSPORT
             // =========================
             const Text(
@@ -790,10 +751,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // =========================
-                      // HOTEL ICON
-                      // =========================
-
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -809,9 +766,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                       const SizedBox(width: 16),
 
-                      // =========================
-                      // HOTEL CONTENT
-                      // =========================
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -858,9 +812,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                                 const SizedBox(width: 12),
 
-                                // =========================
-                                // PRICE + CHANGE
-                                // =========================
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
@@ -897,9 +848,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                             const SizedBox(height: 12),
 
-                            // =========================
-                            // HOTEL DATES
-                            // =========================
                             Text(
                               '${selectedHotel!.checkIn.day.toString().padLeft(2, '0')}.'
                               '${selectedHotel!.checkIn.month.toString().padLeft(2, '0')}.'
@@ -977,6 +925,128 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               ElevatedButton(
                 onPressed: choosePlaces,
                 child: const Text('Choose places'),
+              ),
+
+            const SizedBox(height: 24),
+
+            // =========================
+            // FOOD
+            // =========================
+            const Text(
+              'Food',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 8),
+
+            DropdownButtonFormField<String>(
+              initialValue: foodPreference,
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              items: foodPreferences.map((preference) {
+                return DropdownMenuItem<String>(
+                  value: preference,
+                  child: Text(preference),
+                );
+              }).toList(),
+              onChanged: (value) async {
+                if (value == null) {
+                  return;
+                }
+
+                final tripId = widget.trip['id'];
+
+                try {
+                  await ApiService.updateFoodPreference(
+                    tripId: tripId,
+                    foodPreference: value,
+                  );
+
+                  await loadBudget();
+
+                  if (!mounted) {
+                    return;
+                  }
+
+                  setState(() {
+                    foodPreference = value;
+                    widget.trip['food_preference'] = value;
+                  });
+                } catch (e) {
+                  if (!mounted) {
+                    return;
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to save food preference: $e'),
+                    ),
+                  );
+                }
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            // =========================
+            // BUDGET
+            // =========================
+            const Text(
+              'Budget',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 8),
+
+            if (isLoadingBudget)
+              const Center(child: CircularProgressIndicator())
+            else if (budget != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildBudgetRow('Transport', budget!['transport']),
+
+                      _buildBudgetRow('Hotel', budget!['hotel']),
+
+                      _buildBudgetRow('Food', budget!['food']),
+
+                      _buildBudgetRow(
+                        'Local transportation',
+                        budget!['local_transportation'],
+                      ),
+
+                      _buildBudgetRow(
+                        'Activities & trips',
+                        budget!['activities_and_trips'],
+                      ),
+
+                      const Divider(),
+
+                      _buildBudgetRow('Total', budget!['total'], isTotal: true),
+
+                      const SizedBox(height: 8),
+
+                      _buildBudgetRow(
+                        'Total in your currency',
+                        budget!['user_total'],
+                        isTotal: true,
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      const Text(
+                        'Budget is an estimate. Actual prices may vary depending on provider availability, current rates, exchange rates, food spending and selected activities.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
               ),
 
             const SizedBox(height: 24),

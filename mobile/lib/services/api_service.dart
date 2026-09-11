@@ -82,6 +82,35 @@ class ApiService {
     }
   }
 
+  static Future<void> updateFoodPreference({
+    required int tripId,
+    required String foodPreference,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/food');
+
+    final response = await http.put(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'food_preference': foodPreference}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+  }
+
+  static Future<Map<String, dynamic>> getBudget({required int tripId}) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/budget');
+
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+
+    return jsonDecode(response.body);
+  }
+
   static Future<List<dynamic>> searchCities(String query) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/locations/search')
         .replace(queryParameters: {'q': query});

@@ -1,33 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'pages/create_trip_page.dart';
 import 'pages/trip_details_page.dart';
+import 'pages/profile_page.dart';
 import 'services/api_service.dart';
 
 void main() {
   runApp(const TravelAiPlannerApp());
 }
 
-class TravelAiPlannerApp extends StatelessWidget {
+class TravelAiPlannerApp extends StatefulWidget {
   const TravelAiPlannerApp({super.key});
+
+  @override
+  State<TravelAiPlannerApp> createState() => _TravelAiPlannerAppState();
+}
+
+class _TravelAiPlannerAppState extends State<TravelAiPlannerApp> {
+  Locale? selectedLocale;
+
+  @override
+  void initState() {
+    super.initState();
+    loadLanguage();
+  }
+
+  Future<void> loadLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final savedLanguage = prefs.getString('app_language');
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      if (savedLanguage == 'Русский') {
+        selectedLocale = const Locale('ru');
+      } else if (savedLanguage == 'English') {
+        selectedLocale = const Locale('en');
+      } else {
+        selectedLocale = null;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Travel AI Planner',
+
+      locale: selectedLocale,
+
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+
+      supportedLocales: const [Locale('en'), Locale('ru')],
+
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: const TripPlannerPage(),
+
+      home: TripPlannerPage(onLanguageChanged: loadLanguage),
     );
   }
 }
 
 class TripPlannerPage extends StatefulWidget {
-  const TripPlannerPage({super.key});
+  final Future<void> Function() onLanguageChanged;
+
+  const TripPlannerPage({super.key, required this.onLanguageChanged});
 
   @override
   State<TripPlannerPage> createState() => _TripPlannerPageState();
@@ -77,8 +127,10 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
       });
 
       print('API TRIPS RESULT: $result');
+
       print(
-        'TRIP 30 CURRENCY: ${result.firstWhere((trip) => trip['id'] == 30, orElse: () => {})['user_currency']}',
+        'TRIP 30 CURRENCY: '
+        '${result.firstWhere((trip) => trip['id'] == 30, orElse: () => {})['user_currency']}',
       );
     } finally {
       if (mounted) {
@@ -96,6 +148,18 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
     );
 
     if (result == true && mounted) {
+      await getTrips();
+    }
+  }
+
+  Future<void> openProfile() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ProfilePage()),
+    );
+
+    if (mounted) {
+      await widget.onLanguageChanged();
       await getTrips();
     }
   }
@@ -188,7 +252,15 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
           ],
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            tooltip: 'Profile',
+            onPressed: openProfile,
+            icon: const Icon(Icons.person_outline),
+          ),
+        ],
       ),
+
       body: SafeArea(
         child: Stack(
           children: [
@@ -381,11 +453,13 @@ class _TripPlannerPageState extends State<TripPlannerPage> {
               ),
 
             Positioned(
-              left: 20,
+              right: 20,
               bottom: 20,
               child: FloatingActionButton(
                 onPressed: createTrip,
                 tooltip: 'Create trip',
+                backgroundColor: Colors.black87,
+                foregroundColor: Colors.white,
                 child: const Icon(Icons.add),
               ),
             ),
