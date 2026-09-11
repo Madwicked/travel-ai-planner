@@ -108,7 +108,8 @@ def generate_itinerary_data(
 
     interests = [
         interest.strip()
-        for interest in trip.interests.split(",")
+        for interest in (trip.interests or "").split(",")
+        if interest.strip()
     ]
 
     itinerary = []

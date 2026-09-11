@@ -129,9 +129,11 @@ def create_hotel(
         check_out=hotel.check_out,
     )
 
-    db.add(new_hotel)
-    db.commit()
-    db.refresh(new_hotel)
+    trip = (
+        db.query(Trip)
+        .filter(Trip.id == trip_id)
+        .first()
+    )
 
     return {
         "message": "Hotel created",
@@ -145,6 +147,21 @@ def create_hotel(
             "nights": new_hotel.nights,
             "total_price": new_hotel.total_price,
             "currency": new_hotel.currency,
+
+            "destination_price": currency_service.convert(
+                amount=new_hotel.total_price,
+                from_currency=new_hotel.currency,
+                to_currency=trip.destination_currency,
+            ),
+            "destination_currency": trip.destination_currency,
+
+            "user_price": currency_service.convert(
+                amount=new_hotel.total_price,
+                from_currency=new_hotel.currency,
+                to_currency=trip.user_currency,
+            ),
+            "user_currency": trip.user_currency,
+
             "check_in": new_hotel.check_in,
             "check_out": new_hotel.check_out,
         },
