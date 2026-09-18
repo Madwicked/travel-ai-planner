@@ -23,6 +23,7 @@ class TripPlace(Base):
 
     name = Column(String(255), nullable=False)
     city = Column(String(255), nullable=False)
+    country = Column(String(255), nullable=True)
     category = Column(String(100), nullable=False)
     address = Column(String(255), nullable=False)
 

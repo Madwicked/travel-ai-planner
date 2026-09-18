@@ -5,15 +5,23 @@ import '../services/place_service.dart';
 
 class PlaceOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
+  final List<Place> initialSelectedPlaces;
 
-  const PlaceOptionsPage({super.key, required this.trip});
+  const PlaceOptionsPage({
+    super.key,
+    required this.trip,
+    this.initialSelectedPlaces = const [],
+  });
 
   @override
   State<PlaceOptionsPage> createState() => _PlaceOptionsPageState();
 }
 
 class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
+  bool get isAddingPlaces => widget.initialSelectedPlaces.isNotEmpty;
+
   List<Place> options = [];
+
   final Set<int> selectedIndexes = {};
 
   bool isLoading = true;
@@ -21,53 +29,123 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
   bool isListView = false;
 
-  String selectedCategory = 'All';
+  String searchType = 'city';
+
+  bool useRadius = false;
   double radiusKm = 5;
-  double appliedRadiusKm = 5;
+
+  Set<String> selectedCategories = {'All'};
 
   final categories = <String>[
     'All',
-    'Culture',
-    'Food',
-    'Beach',
+    'Attractions',
     'Nature',
-    'Nightlife',
+    'Entertainment',
+    'Food',
     'Shopping',
   ];
+
+  final TextEditingController nameSearchController = TextEditingController();
+
+  String nameSearch = '';
+  String selectedSort = 'Name';
+
+  int currentOffset = 0;
+  int pageSize = 50;
+
+  bool isLoadingMore = false;
+
+  bool get hasMore => currentOffset < filteredOptions.length;
 
   Future<void> loadPlaceOptions() async {
     final tripId = widget.trip['id'];
 
     try {
-      final loadedOptions = await PlaceService.getPlaceOptions(
-        tripId,
-        appliedRadiusKm.round(),
+      final result = await PlaceService.getPlaceOptions(
+        tripId: tripId,
+        radiusKm: useRadius ? radiusKm.round() : null,
+        searchType: searchType,
+        category: null,
+        offset: 0,
+        limit: 500,
       );
 
       if (!mounted) return;
 
       setState(() {
-        options = loadedOptions;
+        options = result.options;
+
+        currentOffset = result.options.length > pageSize
+            ? pageSize
+            : result.options.length;
+
         isLoading = false;
+        isLoadingMore = false;
+        errorMessage = null;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        errorMessage = 'Failed to load place options';
+        errorMessage = 'Failed to load place options; $e';
         isLoading = false;
+        isLoadingMore = false;
       });
     }
   }
 
+  void loadMorePlaceOptions() {
+    if (isLoadingMore || !hasMore) return;
+
+    setState(() {
+      isLoadingMore = true;
+
+      currentOffset = (currentOffset + pageSize).clamp(
+        0,
+        filteredOptions.length,
+      );
+
+      isLoadingMore = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    nameSearchController.addListener(() {
+      setState(() {
+        nameSearch = nameSearchController.text.trim().toLowerCase();
+      });
+    });
+
+    loadPlaceOptions();
+  }
+
+  @override
+  void dispose() {
+    nameSearchController.dispose();
+
+    super.dispose();
+  }
+
   IconData getPlaceIcon(String category) {
     switch (category) {
-      case 'Culture':
+      case 'Attractions':
         return Icons.account_balance;
+
       case 'Nature':
         return Icons.park;
-      case 'Sightseeing':
-        return Icons.photo_camera;
+
+      case 'Entertainment':
+        return Icons.movie;
+
+      case 'Food':
+        return Icons.restaurant;
+
+      case 'Shopping':
+        return Icons.shopping_bag;
+
       default:
         return Icons.place;
     }
@@ -88,7 +166,21 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
         .map((index) => options[index])
         .toList();
 
-    Navigator.pop(context, selectedPlaces);
+    if (!isAddingPlaces) {
+      Navigator.pop(context, selectedPlaces);
+      return;
+    }
+
+    final existingKeys = widget.initialSelectedPlaces
+        .map((place) => '${place.name}|${place.city}|${place.address}')
+        .toSet();
+
+    final newPlaces = selectedPlaces.where((place) {
+      final key = '${place.name}|${place.city}|${place.address}';
+      return !existingKeys.contains(key);
+    }).toList();
+
+    Navigator.pop(context, [...widget.initialSelectedPlaces, ...newPlaces]);
   }
 
   List<Place> get filteredOptions {
@@ -97,7 +189,39 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     for (var index = 0; index < options.length; index++) {
       final place = options[index];
 
-      if (selectedCategory == 'All' || place.category == selectedCategory) {
+      if (!selectedCategories.contains('All')) {
+        final selectedCategoryNames = selectedCategories
+            .map((category) => category.toLowerCase())
+            .toSet();
+
+        if (!selectedCategoryNames.contains(place.category.toLowerCase())) {
+          continue;
+        }
+      }
+
+      if (isAddingPlaces) {
+        final alreadySelected = widget.initialSelectedPlaces.any(
+          (selectedPlace) =>
+              selectedPlace.name == place.name &&
+              selectedPlace.city == place.city &&
+              selectedPlace.address == place.address,
+        );
+
+        if (alreadySelected) {
+          continue;
+        }
+      }
+
+      final nameMatches =
+          nameSearch.isEmpty || place.name.toLowerCase().contains(nameSearch);
+
+      final radiusMatches =
+          searchType == 'country' ||
+          !useRadius ||
+          place.distanceKm == null ||
+          place.distanceKm! <= radiusKm;
+
+      if (nameMatches && radiusMatches) {
         filteredIndexes.add(index);
       }
     }
@@ -110,17 +234,31 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
         .where((index) => !selectedIndexes.contains(index))
         .toList();
 
-    selected.sort(
-      (a, b) => options[a].name.toLowerCase().compareTo(
-        options[b].name.toLowerCase(),
-      ),
-    );
+    int comparePlaces(int a, int b) {
+      final placeA = options[a];
+      final placeB = options[b];
 
-    unselected.sort(
-      (a, b) => options[a].name.toLowerCase().compareTo(
-        options[b].name.toLowerCase(),
-      ),
-    );
+      switch (selectedSort) {
+        case 'Distance':
+          final distanceA = placeA.distanceKm ?? double.infinity;
+          final distanceB = placeB.distanceKm ?? double.infinity;
+
+          return distanceA.compareTo(distanceB);
+
+        case 'Rating':
+          final ratingA = placeA.rating ?? -1;
+          final ratingB = placeB.rating ?? -1;
+
+          return ratingB.compareTo(ratingA);
+
+        case 'Name':
+        default:
+          return placeA.name.toLowerCase().compareTo(placeB.name.toLowerCase());
+      }
+    }
+
+    selected.sort(comparePlaces);
+    unselected.sort(comparePlaces);
 
     return [
       ...selected.map((index) => options[index]),
@@ -128,10 +266,51 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     ];
   }
 
+  List<Place> get visibleOptions {
+    final end = currentOffset.clamp(0, filteredOptions.length);
+
+    return filteredOptions.take(end).toList();
+  }
+
+  void clearFilters() {
+    setState(() {
+      selectedCategories = {'All'};
+      selectedSort = 'Name';
+      searchType = 'city';
+
+      useRadius = false;
+      radiusKm = 5;
+
+      nameSearchController.clear();
+      selectedIndexes.clear();
+
+      currentOffset = 0;
+
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    loadPlaceOptions();
+  }
+
   Widget buildCardView() {
+    final filtered = visibleOptions;
+
+    if (filtered.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Text(
+            'No places match the selected filters.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      );
+    }
+
     return Column(
-      children: filteredOptions.asMap().entries.map((entry) {
-        final option = entry.value;
+      children: filtered.map((option) {
         final originalIndex = options.indexOf(option);
         final isSelected = selectedIndexes.contains(originalIndex);
 
@@ -154,7 +333,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(
@@ -163,9 +342,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                       size: 24,
                     ),
                   ),
-
                   const SizedBox(width: 12),
-
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,35 +356,37 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-
                         const SizedBox(height: 3),
-
                         Row(
                           children: [
-                            Text(
-                              option.category,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-
-                            if (option.distanceKm != null) ...[
-                              const SizedBox(width: 8),
-
-                              Text(
-                                '• ${option.distanceKm!.toStringAsFixed(1)} km',
+                            Flexible(
+                              child: Text(
+                                option.category,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.grey.shade600,
+                                  color: Colors.grey.shade700,
                                 ),
                               ),
-                            ],
+                            ),
                           ],
                         ),
-
                         const SizedBox(height: 3),
-
+                        Text(
+                          [
+                            if (option.city.isNotEmpty) option.city,
+                            if (option.country != null &&
+                                option.country!.isNotEmpty)
+                              option.country!,
+                          ].join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
                         Text(
                           option.address,
                           maxLines: 1,
@@ -217,9 +396,44 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                             color: Colors.grey.shade600,
                           ),
                         ),
-
                         const SizedBox(height: 6),
 
+                        Row(
+                          children: [
+                            if (option.distanceKm != null) ...[
+                              const Icon(
+                                Icons.near_me,
+                                size: 15,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${option.distanceKm!.toStringAsFixed(1)} km',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(width: 12),
+                            const Icon(
+                              Icons.star,
+                              size: 15,
+                              color: Colors.amber,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              option.rating != null
+                                  ? option.rating!.toStringAsFixed(1)
+                                  : '—',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             Text(
@@ -227,9 +441,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                               '${option.closingTime}',
                               style: const TextStyle(fontSize: 12),
                             ),
-
                             const SizedBox(width: 12),
-
                             Text(
                               'Visit: '
                               '${option.visitDuration ?? '-'}',
@@ -243,12 +455,12 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                       ],
                     ),
                   ),
-
                   const SizedBox(width: 6),
-
                   Checkbox(
                     value: isSelected,
-                    onChanged: (_) => togglePlace(originalIndex),
+                    onChanged: (_) {
+                      togglePlace(originalIndex);
+                    },
                   ),
                 ],
               ),
@@ -260,49 +472,65 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   }
 
   Widget buildListView() {
+    final filtered = visibleOptions;
+
+    if (filtered.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Text(
+            'No places match the selected filters.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+        ),
+      );
+    }
+
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
-        children: filteredOptions.asMap().entries.map((entry) {
-          final option = entry.value;
+        children: filtered.map((option) {
           final originalIndex = options.indexOf(option);
           final isSelected = selectedIndexes.contains(originalIndex);
 
+          final locationText = [
+            if (option.city.isNotEmpty) option.city,
+            if (option.country != null && option.country!.isNotEmpty)
+              option.country!,
+          ].join(', ');
+
           return ListTile(
             leading: Icon(getPlaceIcon(option.category), color: Colors.blue),
-
             title: Text(
               option.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-
             subtitle: Text(
-              '${option.category} • '
-              '${option.address}',
-              maxLines: 1,
+              [
+                option.category,
+                if (locationText.isNotEmpty) locationText,
+                option.address,
+              ].join(' • '),
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-
             trailing: Checkbox(
               value: isSelected,
-              onChanged: (_) => togglePlace(originalIndex),
+              onChanged: (_) {
+                togglePlace(originalIndex);
+              },
             ),
-
-            onTap: () => togglePlace(originalIndex),
+            onTap: () {
+              togglePlace(originalIndex);
+            },
           );
         }).toList(),
       ),
     );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-
-    loadPlaceOptions();
   }
 
   @override
@@ -316,9 +544,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-
       body: _buildBody(destination),
-
       bottomNavigationBar: isLoading
           ? null
           : SafeArea(
@@ -368,62 +594,146 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
             destination,
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
-
           const SizedBox(height: 8),
-
           Text(
             'Choose places you want to visit',
             style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 16),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // --------------------------------------------------
+          // RADIUS
+          // --------------------------------------------------
+          if (searchType == 'city') ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Distance limit',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                Switch(
+                  value: useRadius,
+                  onChanged: (value) {
+                    setState(() {
+                      useRadius = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ],
+
+          if (searchType == 'city' && useRadius) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Maximum distance'),
+                Text(
+                  '${radiusKm.round()} km',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            Slider(
+              value: radiusKm,
+              min: 1,
+              max: 10,
+              divisions: 9,
+              label: '${radiusKm.round()} km',
+              onChanged: (value) {
+                setState(() {
+                  radiusKm = value;
+                });
+              },
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          // --------------------------------------------------
+          // NAME SEARCH
+          // --------------------------------------------------
+          TextField(
+            controller: nameSearchController,
+            decoration: InputDecoration(
+              labelText: 'Search by name',
+              hintText: 'Enter place name',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: nameSearchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        nameSearchController.clear();
+                      },
+                    )
+                  : null,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // --------------------------------------------------
+          // SEARCH AREA
+          // --------------------------------------------------
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Distance',
+                'Search area',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              Text(
-                '${radiusKm.round()} km',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment<String>(
+                    value: 'city',
+                    label: Text('City'),
+                    icon: Icon(Icons.location_city),
+                  ),
+                  ButtonSegment<String>(
+                    value: 'country',
+                    label: Text('Country'),
+                    icon: Icon(Icons.public),
+                  ),
+                ],
+                selected: {searchType},
+                onSelectionChanged: (selection) {
+                  setState(() {
+                    searchType = selection.first;
+                    options = [];
+                    selectedIndexes.clear();
+                    currentOffset = 0;
+                    isLoading = true;
+                    errorMessage = null;
+                  });
+
+                  loadPlaceOptions();
+                },
               ),
             ],
           ),
 
-          Slider(
-            value: radiusKm,
-            min: 1,
-            max: 10,
-            divisions: 9,
-            label: '${radiusKm.round()} km',
-            onChanged: (value) {
-              setState(() {
-                radiusKm = value;
-              });
-            },
-          ),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: isLoading
-                  ? null
-                  : () {
-                      setState(() {
-                        appliedRadiusKm = radiusKm;
-                        isLoading = true;
-                      });
+          const SizedBox(height: 12),
 
-                      loadPlaceOptions();
-                    },
-              child: Text('Apply ${radiusKm.round()} km'),
+          // --------------------------------------------------
+          // CLEAR FILTERS
+          // --------------------------------------------------
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: clearFilters,
+              icon: const Icon(Icons.clear_all),
+              label: const Text('Clear filters'),
             ),
           ),
-          const SizedBox(height: 20),
 
+          const SizedBox(height: 4),
+
+          // --------------------------------------------------
+          // VIEW MODE
+          // --------------------------------------------------
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -452,31 +762,113 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 16),
 
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: categories.map((category) {
-                final isSelected = selectedCategory == category;
+          // --------------------------------------------------
+          // CATEGORY FILTER
+          // --------------------------------------------------
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: categories.map((category) {
+              final isSelected = selectedCategories.contains(category);
 
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    label: Text(category),
-                    selected: isSelected,
-                    onSelected: (_) {
-                      setState(() {
-                        selectedCategory = category;
-                      });
-                    },
-                  ),
-                );
-              }).toList(),
+              return FilterChip(
+                label: Text(category),
+                selected: isSelected,
+                onSelected: (_) {
+                  setState(() {
+                    if (category == 'All') {
+                      selectedCategories = {'All'};
+                    } else {
+                      selectedCategories.remove('All');
+
+                      if (selectedCategories.contains(category)) {
+                        selectedCategories.remove(category);
+                      } else {
+                        selectedCategories.add(category);
+                      }
+
+                      if (selectedCategories.isEmpty) {
+                        selectedCategories.add('All');
+                      }
+                    }
+
+                    selectedIndexes.clear();
+
+                    currentOffset = pageSize.clamp(0, filteredOptions.length);
+                  });
+                },
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 14),
+
+          // --------------------------------------------------
+          // SORT
+          // --------------------------------------------------
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Sort by',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              DropdownButton<String>(
+                value: selectedSort,
+                items: const [
+                  DropdownMenuItem(value: 'Name', child: Text('Name')),
+                  DropdownMenuItem(value: 'Distance', child: Text('Distance')),
+                  DropdownMenuItem(value: 'Rating', child: Text('Rating')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+
+                  setState(() {
+                    selectedSort = value;
+                  });
+                },
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // --------------------------------------------------
+          // RESULTS COUNT
+          // --------------------------------------------------
+          Text(
+            '${filteredOptions.length} places found',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
             ),
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
 
+          // --------------------------------------------------
+          // RESULTS
+          // --------------------------------------------------
           isListView ? buildListView() : buildCardView(),
+
+          // --------------------------------------------------
+          // LOAD MORE
+          // --------------------------------------------------
+          if (hasMore && visibleOptions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: isLoadingMore
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: CircularProgressIndicator(),
+                    )
+                  : ElevatedButton(
+                      onPressed: loadMorePlaceOptions,
+                      child: const Text('Load more'),
+                    ),
+            ),
+          ],
         ],
       ),
     );

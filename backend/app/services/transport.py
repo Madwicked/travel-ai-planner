@@ -72,6 +72,7 @@ def generate_transport_options(
         trip
     )
 
+
     cache = cache_service.save(
         db=db,
         trip_id=trip.id,
@@ -173,6 +174,11 @@ def create_transport(
         transport_type=transport.transport_type,
         transport_price=transport.transport_price,
         currency=transport.currency,
+
+        segments=transport.segments,
+        stops=transport.stops,
+        layovers=transport.layovers,
+
         transport_duration=transport.transport_duration,
         departure_date=transport.departure_date,
         departure_time=transport.departure_time,
@@ -197,6 +203,9 @@ def create_transport(
             "type": new_transport.transport_type,
             "price": new_transport.transport_price,
             "currency": new_transport.currency,
+            "stops": new_transport.stops or 0,
+            "segments": new_transport.segments or [],
+            "layovers": new_transport.layovers or [],
 
             "destination_price": currency_service.convert(
                 amount=new_transport.transport_price,
@@ -250,6 +259,9 @@ def get_transports(
                 "type": transport.transport_type,
                 "price": transport.transport_price,
                 "currency": transport.currency,
+                "stops": transport.stops or 0,
+                "segments": transport.segments or [],
+                "layovers": transport.layovers or [],
 
                 "destination_price": currency_service.convert(
                     amount=transport.transport_price,

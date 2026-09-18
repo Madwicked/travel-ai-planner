@@ -146,9 +146,9 @@ class MockTransportProvider(TransportProvider):
         ]
 
 
-transport_provider = MockTransportProvider()
+# transport_provider = MockTransportProvider()
 
-# from app.services.real_transport_provider import RealTransportProvider
-#
-#
-# transport_provider = RealTransportProvider()
+from app.services.real_transport_provider import RealTransportProvider
+
+
+transport_provider = RealTransportProvider()

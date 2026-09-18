@@ -11,7 +11,6 @@ from app.services.local_transport_budget import (
 )
 
 
-
 def calculate_budget(
     trip_id: int,
     db: Session,
@@ -72,8 +71,8 @@ def calculate_budget(
     # -------------------------
 
     food_preference = (
-            trip.food_preference
-            or "Mixed"
+        trip.food_preference
+        or "Mixed"
     )
 
     food_daily_estimate = get_food_daily_estimate(
@@ -92,7 +91,7 @@ def calculate_budget(
     )
 
     # -------------------------
-    # Future expenses
+    # Local transportation
     # -------------------------
 
     local_transport_ride_estimate = (
@@ -102,12 +101,15 @@ def calculate_budget(
     )
 
     local_transportation_total = (
-            local_transport_ride_estimate
-            * RIDES_PER_DAY
-            * days
-            * trip.travelers
+        local_transport_ride_estimate
+        * RIDES_PER_DAY
+        * days
+        * trip.travelers
     )
 
+    # -------------------------
+    # Activities & trips
+    # -------------------------
 
     activities_and_trips_total = 0.0
 
@@ -116,23 +118,70 @@ def calculate_budget(
     # -------------------------
 
     total = (
-            transport_total
-            + hotel_total
-            + food_total
-            + local_transportation_total
-            + activities_and_trips_total
+        transport_total
+        + hotel_total
+        + food_total
+        + local_transportation_total
+        + activities_and_trips_total
     )
+
+    # -------------------------
+    # User currency
+    # -------------------------
 
     user_currency = trip.user_currency
 
+    user_transport_total = None
+    user_hotel_total = None
+    user_food_total = None
+    user_local_transportation_total = None
+    user_activities_and_trips_total = None
     user_total = None
 
     if user_currency:
+        user_transport_total = CurrencyService.convert(
+            amount=transport_total,
+            from_currency=destination_currency,
+            to_currency=user_currency,
+        )
+
+        user_hotel_total = CurrencyService.convert(
+            amount=hotel_total,
+            from_currency=destination_currency,
+            to_currency=user_currency,
+        )
+
+        user_food_total = CurrencyService.convert(
+            amount=food_total,
+            from_currency=destination_currency,
+            to_currency=user_currency,
+        )
+
+        user_local_transportation_total = (
+            CurrencyService.convert(
+                amount=local_transportation_total,
+                from_currency=destination_currency,
+                to_currency=user_currency,
+            )
+        )
+
+        user_activities_and_trips_total = (
+            CurrencyService.convert(
+                amount=activities_and_trips_total,
+                from_currency=destination_currency,
+                to_currency=user_currency,
+            )
+        )
+
         user_total = CurrencyService.convert(
             amount=total,
             from_currency=destination_currency,
             to_currency=user_currency,
         )
+
+    # -------------------------
+    # Response
+    # -------------------------
 
     return {
         "trip_id": trip.id,
@@ -141,16 +190,22 @@ def calculate_budget(
         "transport": {
             "amount": round(transport_total, 2),
             "currency": destination_currency,
+            "user_amount": user_transport_total,
+            "user_currency": user_currency,
         },
 
         "hotel": {
             "amount": round(hotel_total, 2),
             "currency": destination_currency,
+            "user_amount": user_hotel_total,
+            "user_currency": user_currency,
         },
 
         "food": {
             "amount": round(food_total, 2),
             "currency": destination_currency,
+            "user_amount": user_food_total,
+            "user_currency": user_currency,
             "preference": food_preference,
             "daily_estimate": food_daily_estimate,
         },
@@ -161,6 +216,8 @@ def calculate_budget(
                 2,
             ),
             "currency": destination_currency,
+            "user_amount": user_local_transportation_total,
+            "user_currency": user_currency,
         },
 
         "activities_and_trips": {
@@ -169,6 +226,8 @@ def calculate_budget(
                 2,
             ),
             "currency": destination_currency,
+            "user_amount": user_activities_and_trips_total,
+            "user_currency": user_currency,
         },
 
         "total": {

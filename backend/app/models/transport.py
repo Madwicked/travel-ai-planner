@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Date, Float, ForeignKey, Integer, JSON, String
 
 from app.database import Base
 
@@ -25,6 +25,9 @@ class TripTransport(Base):
     transport_type = Column(String(50), nullable=False)
     transport_price = Column(Float, nullable=False)
     currency = Column(String(3), nullable=False)
+    segments = Column(JSON, nullable=True)
+    stops = Column(Integer, nullable=True)
+    layovers = Column(JSON, nullable=True)
     transport_duration = Column(String(50), nullable=False)
 
     departure_date = Column(Date, nullable=False)

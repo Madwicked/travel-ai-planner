@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'hotel_details_page.dart';
 import 'hotel_options_page.dart';
 import 'itinerary_page.dart';
 import 'place_options_page.dart';
+import 'transport_details_page.dart';
 import 'transport_options_page.dart';
 import '../models/hotel.dart';
 import '../models/place.dart';
@@ -44,6 +46,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   Map<String, dynamic>? budget;
   bool isLoadingBudget = true;
+
+  bool includeArrivalDayActivities = false;
+  bool includeDepartureDayActivities = false;
 
   @override
   void initState() {
@@ -186,27 +191,29 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   // =========================
 
   IconData getTransportIcon(String type) {
-    switch (type) {
-      case 'Flight':
-        return Icons.flight;
-
-      case 'Bus':
-        return Icons.directions_bus;
-
-      case 'Train':
-        return Icons.train;
-
-      case 'Transfer':
-        return Icons.directions_car;
-
-      default:
-        return Icons.directions_transit;
+    if (type.startsWith('Flight')) {
+      return Icons.flight;
     }
+
+    if (type.startsWith('Bus')) {
+      return Icons.directions_bus;
+    }
+
+    if (type.startsWith('Train')) {
+      return Icons.train;
+    }
+
+    if (type.startsWith('Transfer')) {
+      return Icons.directions_car;
+    }
+
+    return Icons.directions_transit;
   }
 
   Widget buildTransportCard(
     Transport transport, {
     required VoidCallback onChange,
+    VoidCallback? onTap,
   }) {
     final bool isReturn = transport.direction == 'return';
 
@@ -241,53 +248,86 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  getTransportIcon(transport.type),
+                  color: Colors.blue,
+                  size: 28,
+                ),
               ),
-              child: Icon(
-                getTransportIcon(transport.type),
-                color: Colors.blue,
-                size: 28,
-              ),
-            ),
 
-            const SizedBox(width: 16),
+              const SizedBox(width: 16),
 
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                departureLabel,
+                                softWrap: true,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+
+                              const SizedBox(height: 2),
+
+                              const Text(
+                                '↓',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+
+                              const SizedBox(height: 2),
+
+                              Text(
+                                arrivalLabel,
+                                softWrap: true,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(width: 12),
+
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              departureLabel,
-                              softWrap: true,
+                              '${transport.userPrice} '
+                              '${transport.userCurrency}',
+                              textAlign: TextAlign.right,
                               style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-
-                            const SizedBox(height: 2),
-
-                            const Text(
-                              '↓',
-                              style: TextStyle(
-                                fontSize: 17,
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -295,82 +335,70 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                             const SizedBox(height: 2),
 
                             Text(
-                              arrivalLabel,
-                              softWrap: true,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
+                              '${transport.destinationPrice} '
+                              '${transport.destinationCurrency}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
                               ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            OutlinedButton(
+                              onPressed: onChange,
+                              child: const Text('Change'),
                             ),
                           ],
                         ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Text(
+                      '${transport.departureDate} → '
+                      '${transport.arrivalDate}',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+
+                    const SizedBox(height: 4),
+
+                    Text(
+                      '${transport.departureTime} → '
+                      '${transport.arrivalTime}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
                       ),
+                    ),
 
-                      const SizedBox(width: 12),
+                    const SizedBox(height: 4),
 
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${transport.destinationPrice} '
-                            '${transport.destinationCurrency}',
-                            textAlign: TextAlign.right,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                    Text(
+                      transport.duration,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    if (transport.segments.length > 1) ...[
+                      const SizedBox(height: 8),
 
-                          const SizedBox(height: 2),
-
-                          Text(
-                            '${transport.userPrice} '
-                            '${transport.userCurrency}',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          OutlinedButton(
-                            onPressed: onChange,
-                            child: const Text('Change'),
-                          ),
-                        ],
+                      Text(
+                        'Connections: ${transport.segments.take(transport.segments.length - 1).map((segment) => segment.arrivalLocation).join(' → ')}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  Text(
-                    '${transport.departureDate} → '
-                    '${transport.arrivalDate}',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-
-                  const SizedBox(height: 4),
-
-                  Text(
-                    '${transport.departureTime} → '
-                    '${transport.arrivalTime}',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                  ),
-
-                  const SizedBox(height: 4),
-
-                  Text(
-                    transport.duration,
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -421,6 +449,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final tripId = widget.trip['id'];
 
     try {
+      if (selectedHotel?.id != null) {
+        await HotelService.deleteHotel(
+          tripId: tripId,
+          hotelId: selectedHotel!.id!,
+        );
+      }
+
       final savedHotel = await HotelService.createHotel(
         tripId: tripId,
         hotel: hotel,
@@ -429,7 +464,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       if (!context.mounted) return;
 
       setState(() {
-        selectedHotel = savedHotel;
+        selectedHotel = hotel;
       });
 
       await loadBudget();
@@ -483,24 +518,59 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final amount = value['amount'];
     final currency = value['currency'];
 
+    final userAmount = value['user_amount'];
+    final userCurrency = value['user_currency'];
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: isTotal ? 16 : 14,
+                fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              ),
             ),
           ),
-          Text(
-            '${amount.toStringAsFixed(2)} $currency',
-            style: TextStyle(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-            ),
+
+          const SizedBox(width: 12),
+
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (userAmount != null && userCurrency != null)
+                Text(
+                  '${userAmount.toStringAsFixed(2)} '
+                  '$userCurrency',
+                  style: TextStyle(
+                    fontSize: isTotal ? 16 : 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+              if (userAmount != null && userCurrency != null)
+                Text(
+                  '(${amount.toStringAsFixed(2)} '
+                  '$currency)',
+                  style: TextStyle(
+                    fontSize: isTotal ? 12 : 11,
+                    color: Colors.grey.shade600,
+                  ),
+                )
+              else
+                Text(
+                  '${amount.toStringAsFixed(2)} '
+                  '$currency',
+                  style: TextStyle(
+                    fontSize: isTotal ? 16 : 14,
+                    fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+            ],
           ),
         ],
       ),
@@ -551,16 +621,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       await PlaceService.deletePlaces(tripId);
 
-      final savedPlaces = <Place>[];
-
-      for (final place in places) {
-        final savedPlace = await PlaceService.createPlace(
-          tripId: tripId,
-          place: place,
-        );
-
-        savedPlaces.add(savedPlace);
-      }
+      final savedPlaces = await PlaceService.createPlacesBulk(
+        tripId: tripId,
+        places: places,
+      );
 
       if (!context.mounted) return;
 
@@ -575,6 +639,60 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to save places: $e')));
+    }
+  }
+
+  Future<void> addPlaces() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlaceOptionsPage(
+          trip: widget.trip,
+          initialSelectedPlaces: selectedPlaces,
+        ),
+      ),
+    );
+
+    if (result == null || !context.mounted) {
+      return;
+    }
+
+    final places = List<Place>.from(result);
+
+    final existingIds = selectedPlaces
+        .where((place) => place.id != null)
+        .map((place) => place.id!)
+        .toSet();
+
+    final newPlaces = places.where((place) {
+      return place.id == null || !existingIds.contains(place.id);
+    }).toList();
+
+    if (newPlaces.isEmpty) {
+      return;
+    }
+
+    final tripId = widget.trip['id'];
+
+    try {
+      final savedPlaces = await PlaceService.createPlacesBulk(
+        tripId: tripId,
+        places: newPlaces,
+      );
+
+      if (!context.mounted) return;
+
+      setState(() {
+        selectedPlaces.addAll(savedPlaces);
+      });
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Places added')));
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to add places: $e')));
     }
   }
 
@@ -690,6 +808,15 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseOutboundTransport,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            TransportDetailsPage(transport: transport),
+                      ),
+                    );
+                  },
                 ),
               )
             else
@@ -717,6 +844,15 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseReturnTransport,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            TransportDetailsPage(transport: transport),
+                      ),
+                    );
+                  },
                 ),
               )
             else
@@ -743,136 +879,213 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               Card(
                 margin: const EdgeInsets.only(bottom: 12),
                 elevation: 2,
+                clipBehavior: Clip.antiAlias,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.hotel,
-                          color: Colors.blue,
-                          size: 28,
-                        ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            HotelDetailsPage(hotel: selectedHotel!),
                       ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.hotel,
+                            color: Colors.blue,
+                            size: 28,
+                          ),
+                        ),
 
-                      const SizedBox(width: 16),
+                        const SizedBox(width: 16),
 
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          selectedHotel!.name,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+
+                                        const SizedBox(height: 6),
+
+                                        Text(
+                                          selectedHotel!.city,
+                                          style: const TextStyle(fontSize: 15),
+                                        ),
+
+                                        const SizedBox(height: 4),
+
+                                        Text(
+                                          selectedHotel!.address,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 12),
+
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        selectedHotel!.name,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                        '${selectedHotel!.userPrice} '
+                                        '${selectedHotel!.userCurrency}',
                                         style: const TextStyle(
-                                          fontSize: 18,
+                                          fontSize: 20,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
 
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 2),
 
                                       Text(
-                                        selectedHotel!.city,
-                                        style: const TextStyle(fontSize: 15),
-                                      ),
-
-                                      const SizedBox(height: 4),
-
-                                      Text(
-                                        selectedHotel!.address,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
+                                        '${selectedHotel!.destinationPrice} '
+                                        '${selectedHotel!.destinationCurrency}',
                                         style: TextStyle(
                                           fontSize: 14,
                                           color: Colors.grey.shade600,
                                         ),
                                       ),
+
+                                      const SizedBox(height: 8),
+
+                                      OutlinedButton(
+                                        onPressed: chooseHotel,
+                                        child: const Text('Change'),
+                                      ),
                                     ],
                                   ),
+                                ],
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              Text(
+                                '${selectedHotel!.checkIn.day.toString().padLeft(2, '0')}.'
+                                '${selectedHotel!.checkIn.month.toString().padLeft(2, '0')}.'
+                                '${selectedHotel!.checkIn.year}'
+                                ' → '
+                                '${selectedHotel!.checkOut.day.toString().padLeft(2, '0')}.'
+                                '${selectedHotel!.checkOut.month.toString().padLeft(2, '0')}.'
+                                '${selectedHotel!.checkOut.year}',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+
+                              const SizedBox(height: 4),
+
+                              Text(
+                                '${selectedHotel!.nights} '
+                                '${selectedHotel!.nights == 1 ? 'night' : 'nights'}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
                                 ),
-
-                                const SizedBox(width: 12),
-
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
+                              ),
+                              if (selectedHotel!.rateOptions.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  selectedHotel!.rateOptions.first.roomName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                if (selectedHotel!
+                                    .rateOptions
+                                    .first
+                                    .boardName
+                                    .isNotEmpty)
+                                  Text(
+                                    selectedHotel!.rateOptions.first.boardName,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade700,
+                                    ),
+                                  ),
+                                const SizedBox(height: 4),
+                                Row(
                                   children: [
-                                    Text(
-                                      '${selectedHotel!.destinationPrice} '
-                                      '${selectedHotel!.destinationCurrency}',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                    Icon(
+                                      selectedHotel!
+                                              .rateOptions
+                                              .first
+                                              .refundable
+                                          ? Icons.check_circle_outline
+                                          : Icons.cancel_outlined,
+                                      size: 16,
+                                      color:
+                                          selectedHotel!
+                                              .rateOptions
+                                              .first
+                                              .refundable
+                                          ? Colors.green
+                                          : Colors.red,
                                     ),
-
-                                    const SizedBox(height: 2),
-
+                                    const SizedBox(width: 5),
                                     Text(
-                                      '${selectedHotel!.userPrice} '
-                                      '${selectedHotel!.userCurrency}',
+                                      selectedHotel!
+                                              .rateOptions
+                                              .first
+                                              .refundable
+                                          ? 'Refundable'
+                                          : 'Non-refundable',
                                       style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey.shade600,
+                                        fontSize: 13,
+                                        color:
+                                            selectedHotel!
+                                                .rateOptions
+                                                .first
+                                                .refundable
+                                            ? Colors.green
+                                            : Colors.red,
                                       ),
-                                    ),
-
-                                    const SizedBox(height: 8),
-
-                                    OutlinedButton(
-                                      onPressed: chooseHotel,
-                                      child: const Text('Change'),
                                     ),
                                   ],
                                 ),
                               ],
-                            ),
-
-                            const SizedBox(height: 12),
-
-                            Text(
-                              '${selectedHotel!.checkIn.day.toString().padLeft(2, '0')}.'
-                              '${selectedHotel!.checkIn.month.toString().padLeft(2, '0')}.'
-                              '${selectedHotel!.checkIn.year}'
-                              ' → '
-                              '${selectedHotel!.checkOut.day.toString().padLeft(2, '0')}.'
-                              '${selectedHotel!.checkOut.month.toString().padLeft(2, '0')}.'
-                              '${selectedHotel!.checkOut.year}',
-                              style: const TextStyle(fontSize: 14),
-                            ),
-
-                            const SizedBox(height: 4),
-
-                            Text(
-                              '${selectedHotel!.nights} '
-                              '${selectedHotel!.nights == 1 ? 'night' : 'nights'}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               )
@@ -905,7 +1118,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   crossAxisCount: 2,
                   crossAxisSpacing: 10,
                   mainAxisSpacing: 6,
-                  childAspectRatio: 3.5,
+                  childAspectRatio: 4.5,
                 ),
                 itemBuilder: (context, index) {
                   return buildPlaceCard(selectedPlaces[index]);
@@ -914,12 +1127,24 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
               const SizedBox(height: 8),
 
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: choosePlaces,
-                  child: const Text('Change places'),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: addPlaces,
+                      child: const Text('Add places'),
+                    ),
+                  ),
+
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: choosePlaces,
+                      child: const Text('Change places'),
+                    ),
+                  ),
+                ],
               ),
             ] else
               ElevatedButton(
@@ -1028,13 +1253,17 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                       const Divider(),
 
-                      _buildBudgetRow('Total', budget!['total'], isTotal: true),
+                      _buildBudgetRow(
+                        'Total in your currency',
+                        budget!['user_total'],
+                        isTotal: true,
+                      ),
 
                       const SizedBox(height: 8),
 
                       _buildBudgetRow(
-                        'Total in your currency',
-                        budget!['user_total'],
+                        'Total in destination currency',
+                        budget!['total'],
                         isTotal: true,
                       ),
 
@@ -1052,6 +1281,47 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 24),
 
             // =========================
+            // ITINERARY OPTIONS
+            // =========================
+            const Text(
+              'Itinerary options',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              'Choose whether activities can be planned on your arrival and departure days.',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+
+            const SizedBox(height: 8),
+
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: includeArrivalDayActivities,
+              onChanged: (value) {
+                setState(() {
+                  includeArrivalDayActivities = value ?? false;
+                });
+              },
+              title: const Text('Plan activities on arrival day'),
+            ),
+
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: includeDepartureDayActivities,
+              onChanged: (value) {
+                setState(() {
+                  includeDepartureDayActivities = value ?? false;
+                });
+              },
+              title: const Text('Plan activities on departure day'),
+            ),
+
+            const SizedBox(height: 16),
+
+            // =========================
             // ITINERARY
             // =========================
             SizedBox(
@@ -1061,7 +1331,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => ItineraryPage(trip: widget.trip),
+                      builder: (context) => ItineraryPage(
+                        trip: widget.trip,
+                        includeArrivalDayActivities:
+                            includeArrivalDayActivities,
+                        includeDepartureDayActivities:
+                            includeDepartureDayActivities,
+                      ),
                     ),
                   );
                 },

@@ -8,7 +8,12 @@ import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 from dotenv import load_dotenv
+
+from app.database import SessionLocal
+from app.models.hotel_content import HotelContent
+
 
 load_dotenv()
 
@@ -211,14 +216,14 @@ class RealHotelProvider(HotelProvider):
 
         try:
             with urllib.request.urlopen(
-                    request,
-                    context=ssl_context,
-                    timeout=30,
+                request,
+                context=ssl_context,
+                timeout=30,
             ) as response:
                 response_data = response.read()
 
                 if response.headers.get(
-                        "Content-Encoding"
+                    "Content-Encoding"
                 ) == "gzip":
                     response_data = gzip.decompress(
                         response_data
@@ -230,37 +235,46 @@ class RealHotelProvider(HotelProvider):
                     )
                 )
 
-
         except urllib.error.HTTPError as error:
-
             response_data = error.read()
 
             if error.headers.get(
-
-                    "Content-Encoding"
-
+                "Content-Encoding"
             ) == "gzip":
                 response_data = gzip.decompress(
-
                     response_data
-
                 )
 
             response_body = response_data.decode(
-
                 "utf-8",
-
                 errors="replace",
-
             )
 
             raise RuntimeError(
-
                 f"Hotelbeds API error "
-
                 f"{error.code}: {response_body}"
-
             ) from error
+
+    def _get_content_data(
+        self,
+        hotel_code,
+    ):
+        if not hotel_code:
+            return None
+
+        db = SessionLocal()
+
+        try:
+            return (
+                db.query(HotelContent)
+                .filter(
+                    HotelContent.hotel_code
+                    == str(hotel_code)
+                )
+                .first()
+            )
+        finally:
+            db.close()
 
     def _build_options(
         self,
@@ -284,81 +298,258 @@ class RealHotelProvider(HotelProvider):
         options = []
 
         for hotel in hotels:
+            hotel_code = hotel.get(
+                "code"
+            )
+
+            content = self._get_content_data(
+                hotel_code
+            )
+
             rooms = hotel.get(
                 "rooms",
                 []
             )
 
-            rates = []
+            rate_options = []
 
             for room in rooms:
-                rates.extend(
-                    room.get(
-                        "rates",
+                room_name = room.get(
+                    "name",
+                    "Room",
+                )
+
+                rates = room.get(
+                    "rates",
+                    []
+                )
+
+                for rate in rates:
+                    net = rate.get("net")
+
+                    if net is None:
+                        continue
+
+                    try:
+                        total_price = float(net)
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        continue
+
+                    cancellation_policies = rate.get(
+                        "cancellationPolicies",
                         []
                     )
-                )
 
-            valid_rates = []
+                    is_refundable = bool(
+                        cancellation_policies
+                    ) and rate.get(
+                        "rateClass"
+                    ) != "NRF"
 
-            for rate in rates:
-                net = rate.get("net")
+                    taxes = rate.get(
+                        "taxes",
+                        {}
+                    )
 
-                if net is None:
-                    continue
+                    tax_options = taxes.get(
+                        "taxes",
+                        []
+                    )
 
-                try:
-                    total_price = float(net)
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-                    continue
+                    total_taxes = 0.0
 
-                valid_rates.append(
-                    total_price
-                )
+                    for tax in tax_options:
+                        tax_amount = tax.get(
+                            "amount"
+                        )
 
-            if not valid_rates:
+                        try:
+                            total_taxes += float(
+                                tax_amount
+                            )
+                        except (
+                            TypeError,
+                            ValueError,
+                        ):
+                            continue
+
+                    rate_options.append(
+                        {
+                            "room_name": room_name,
+                            "board_code": rate.get(
+                                "boardCode",
+                                "",
+                            ),
+                            "board_name": rate.get(
+                                "boardName",
+                                "",
+                            ),
+                            "rate_class": rate.get(
+                                "rateClass",
+                                "",
+                            ),
+                            "rate_type": rate.get(
+                                "rateType",
+                                "",
+                            ),
+                            "payment_type": rate.get(
+                                "paymentType",
+                                "",
+                            ),
+                            "total_price": round(
+                                total_price,
+                                2,
+                            ),
+                            "price_per_night": round(
+                                total_price
+                                / number_of_nights,
+                                2,
+                            ),
+                            "currency": hotels_data.get(
+                                "currency",
+                                "EUR",
+                            ),
+                            "allotment": rate.get(
+                                "allotment",
+                                0,
+                            ),
+                            "rooms": rate.get(
+                                "rooms",
+                                0,
+                            ),
+                            "adults": rate.get(
+                                "adults",
+                                0,
+                            ),
+                            "children": rate.get(
+                                "children",
+                                0,
+                            ),
+                            "refundable": is_refundable,
+                            "cancellation_policies": (
+                                cancellation_policies
+                            ),
+                            "taxes": tax_options,
+                            "taxes_included": taxes.get(
+                                "allIncluded",
+                                False,
+                            ),
+                            "total_taxes": round(
+                                total_taxes,
+                                2,
+                            ),
+                        }
+                    )
+
+            if not rate_options:
                 continue
 
-            total_price = min(
-                valid_rates
-            )
-
-            price_per_night = (
-                total_price
-                / number_of_nights
+            min_rate = min(
+                rate["total_price"]
+                for rate in rate_options
             )
 
             options.append(
                 {
+                    "hotel_code": hotel_code,
                     "name": hotel.get(
                         "name",
                         "Hotel",
                     ),
-                    "city": hotel.get(
-                        "destinationName",
-                        trip.destination,
-                    ),
-                    "address": "",
-                    "price_per_night": (
-                        round(
-                            price_per_night,
-                            2,
+                    "city": (
+                        content.city
+                        if content
+                        and content.city
+                        else hotel.get(
+                            "destinationName",
+                            trip.destination,
                         )
+                    ),
+                    "address": (
+                        content.address
+                        if content
+                        and content.address
+                        else hotel.get(
+                            "address",
+                            "",
+                        )
+                    ),
+                    "description": (
+                        content.description
+                        if content
+                        else None
+                    ),
+                    "category_code": (
+                        content.category_code
+                        if content
+                        else hotel.get(
+                            "categoryCode"
+                        )
+                    ),
+                    "category_name": (
+                        content.category_name
+                        if content
+                        else hotel.get(
+                            "categoryName"
+                        )
+                    ),
+                    "accommodation_type": (
+                        content.accommodation_type
+                        if content
+                        else None
+                    ),
+                    "facilities": (
+                        json.loads(
+                            content.facilities
+                        )
+                        if content
+                        and content.facilities
+                        else []
+                    ),
+                    "pets_allowed": (
+                        content.pets_allowed
+                        if content
+                        else None
+                    ),
+                    "adults_only": (
+                        content.adults_only
+                        if content
+                        else None
+                    ),
+                    "latitude": (
+                        content.latitude
+                        if content
+                        else hotel.get(
+                            "latitude"
+                        )
+                    ),
+                    "longitude": (
+                        content.longitude
+                        if content
+                        else hotel.get(
+                            "longitude"
+                        ),
+                    ),
+                    "price_per_night": round(
+                        min_rate
+                        / number_of_nights,
+                        2,
+                    ),
+                    "currency": hotels_data.get(
+                        "currency",
+                        "EUR",
                     ),
                     "nights": number_of_nights,
                     "total_price": round(
-                        total_price,
+                        min_rate,
                         2,
                     ),
-                    "check_in": (
-                        trip.start_date
-                    ),
-                    "check_out": (
-                        trip.end_date
-                    ),
+                    "check_in": trip.start_date,
+                    "check_out": trip.end_date,
+                    "rate_options": rate_options,
                 }
             )
 
@@ -378,6 +569,7 @@ class RealHotelProvider(HotelProvider):
             trip,
         )
 
-hotel_provider = MockHotelProvider()
 
-# hotel_provider = RealHotelProvider()
+# hotel_provider = MockHotelProvider()
+
+hotel_provider = RealHotelProvider()

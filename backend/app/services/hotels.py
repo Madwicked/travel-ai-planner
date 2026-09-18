@@ -8,7 +8,6 @@ from app.services.cache_service import cache_service
 from app.services.currency_service import currency_service
 
 
-
 def generate_hotel_options(
     trip,
     db: Session,
@@ -31,12 +30,14 @@ def generate_hotel_options(
         display_options = [
             {
                 **option,
+
                 "destination_price": currency_service.convert(
                     amount=option["total_price"],
                     from_currency=option["currency"],
                     to_currency=trip.destination_currency,
                 ),
                 "destination_currency": trip.destination_currency,
+
                 "user_price": currency_service.convert(
                     amount=option["total_price"],
                     from_currency=option["currency"],
@@ -72,12 +73,14 @@ def generate_hotel_options(
     display_options = [
         {
             **option,
+
             "destination_price": currency_service.convert(
                 amount=option["total_price"],
                 from_currency=option["currency"],
                 to_currency=trip.destination_currency,
             ),
             "destination_currency": trip.destination_currency,
+
             "user_price": currency_service.convert(
                 amount=option["total_price"],
                 from_currency=option["currency"],
@@ -98,6 +101,7 @@ def generate_hotel_options(
             ttl_minutes=5,
         ),
     }
+
 
 def create_hotel(
     trip_id: int,
@@ -171,11 +175,16 @@ def create_hotel(
         },
     }
 
+
 def get_hotels(
     trip_id: int,
     db: Session,
 ):
-    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    trip = (
+        db.query(Trip)
+        .filter(Trip.id == trip_id)
+        .first()
+    )
 
     hotels = (
         db.query(TripHotel)
@@ -218,6 +227,7 @@ def get_hotels(
             for hotel in hotels
         ],
     }
+
 
 def delete_hotel(
     trip_id: int,

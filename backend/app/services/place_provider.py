@@ -3,12 +3,22 @@ from abc import ABC, abstractmethod
 
 class PlaceProvider(ABC):
     @abstractmethod
-    def get_place_options(self, trip):
+    def get_place_options(
+            self,
+            trip,
+            latitude: float | None = None,
+            longitude: float | None = None,
+            radius_km: int | None = None,
+            category: str | None = None,
+            offset: int = 0,
+            limit: int = 50,
+            country_place_id: str | None = None,
+    ):
         pass
 
 
 class MockPlaceProvider(PlaceProvider):
-    def get_place_options(self, trip):
+    def get_place_options(self, trip, radius_km: int = 10,):
         return [
             {
                 "external_id": "mock-colosseum",

@@ -1,10 +1,13 @@
+import json
+import urllib.parse
+import urllib.request
 from abc import ABC, abstractmethod
-from math import sqrt
 
 
 class AirportProvider(ABC):
+
     @abstractmethod
-    def find_airport(
+    def find_airports(
         self,
         city: str,
         latitude: float | None,
@@ -13,71 +16,156 @@ class AirportProvider(ABC):
         pass
 
 
-class MockAirportProvider(AirportProvider):
-    def __init__(self):
-        self.airports = [
-            {
-                "name": "Belgrade Nikola Tesla Airport",
-                "iata_code": "BEG",
-                "city": "Belgrade",
-                "latitude": 44.8184,
-                "longitude": 20.3091,
-            },
-            {
-                "name": "Berlin Brandenburg Airport",
-                "iata_code": "BER",
-                "city": "Berlin",
-                "latitude": 52.3667,
-                "longitude": 13.5033,
-            },
-            {
-                "name": "Budapest Ferenc Liszt International Airport",
-                "iata_code": "BUD",
-                "city": "Budapest",
-                "latitude": 47.4369,
-                "longitude": 19.2556,
-            },
-            {
-                "name": "Leonardo da Vinci–Fiumicino Airport",
-                "iata_code": "FCO",
-                "city": "Rome",
-                "latitude": 41.8003,
-                "longitude": 12.2389,
-            },
-            {
-                "name": "Paris Charles de Gaulle Airport",
-                "iata_code": "CDG",
-                "city": "Paris",
-                "latitude": 49.0097,
-                "longitude": 2.5479,
-            },
-        ]
+class FreeAirportDbProvider(AirportProvider):
 
-    def find_airport(
-        self,
-        city: str,
-        latitude: float | None,
-        longitude: float | None,
-    ):
-        if latitude is None or longitude is None:
-            return None
+    BASE_URL = "https://api.freeairportdb.com/v1"
 
-        city_airports = [
-            airport
-            for airport in self.airports
-            if airport["city"].lower() == city.lower()
-        ]
+    def find_airports(self, city, latitude, longitude):
+        if latitude is not None and longitude is not None:
+            airports = self._find_nearby(
+                city=city,
+                latitude=latitude,
+                longitude=longitude,
+            )
 
-        if not city_airports:
-            return None
+            if airports:
+                return airports
 
-        return min(
-            city_airports,
-            key=lambda airport: sqrt(
-                (airport["latitude"] - latitude) ** 2
-                + (airport["longitude"] - longitude) ** 2
-            ),
+        return self._find_by_city(
+            city=city,
+            latitude=latitude,
+            longitude=longitude,
         )
 
+    def _find_nearby(self, city, latitude, longitude):
+        params = urllib.parse.urlencode({
+            "lat": latitude,
+            "lng": longitude,
+            "limit": 20,
+        })
 
-airport_provider = MockAirportProvider()
+        url = f"{self.BASE_URL}/airports/nearby?{params}"
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "TravelAIPlanner/1.0",
+            },
+            method="GET",
+        )
+
+        with urllib.request.urlopen(request) as response:
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        airports = [
+            airport
+            for airport in data.get("data", [])
+            if airport.get("iata")
+            and airport.get("type")
+            in {"large_airport", "medium_airport"}
+        ]
+
+        if not airports:
+            return []
+
+        city_lower = city.lower()
+
+        city_related_airports = [
+            airport
+            for airport in airports
+            if airport.get("municipality")
+               and city_lower in airport["municipality"].lower()
+        ]
+
+        if city_related_airports:
+            airports = city_related_airports
+
+        airports.sort(
+            key=lambda item: item.get(
+                "distance_km",
+                float("inf"),
+            )
+        )
+
+        return [
+            self._format_airport(airport)
+            for airport in airports
+        ]
+
+    def _find_by_city(
+        self,
+        city,
+        latitude=None,
+        longitude=None,
+    ):
+        query = urllib.parse.urlencode({
+            "q": city,
+            "limit": 100,
+        })
+
+        url = f"{self.BASE_URL}/airports?{query}"
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "TravelAIPlanner/1.0",
+            },
+        )
+
+        with urllib.request.urlopen(request) as response:
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        airports = [
+            airport
+            for airport in data.get("data", [])
+            if airport.get("iata")
+            and airport.get("type")
+            in {"large_airport", "medium_airport"}
+        ]
+
+        if not airports:
+            return []
+
+        city_lower = city.lower()
+
+        municipality_matches = [
+            airport
+            for airport in airports
+            if airport.get("municipality")
+            and airport["municipality"].lower() == city_lower
+        ]
+
+        if municipality_matches:
+            airports = municipality_matches
+
+        if latitude is not None and longitude is not None:
+            airports.sort(
+                key=lambda item: (
+                    (item.get("latitude", 0) - latitude) ** 2
+                    + (item.get("longitude", 0) - longitude) ** 2
+                )
+            )
+
+        return [
+            self._format_airport(airport)
+            for airport in airports
+        ]
+
+    @staticmethod
+    def _format_airport(airport):
+        return {
+            "name": airport.get("name"),
+            "iata_code": airport.get("iata"),
+            "city": airport.get("municipality"),
+            "latitude": airport.get("latitude"),
+            "longitude": airport.get("longitude"),
+        }
+
+
+airport_provider = FreeAirportDbProvider()

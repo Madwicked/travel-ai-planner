@@ -1,5 +1,6 @@
 from datetime import date
 
+
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -53,6 +54,11 @@ class TransportCreate(BaseModel):
     transport_type: str
     transport_price: float
     currency: str
+
+    segments: list[dict] = Field(default_factory=list)
+    stops: int = 0
+    layovers: list[dict] = Field(default_factory=list)
+
     transport_duration: str
 
     departure_date: date
@@ -85,6 +91,7 @@ class PlaceCreate(BaseModel):
 
     name: str
     city: str
+    country: str | None = None
     category: str
     address: str
 

@@ -83,6 +83,12 @@ class TransportService {
       'arrival_date': transport.arrivalDate,
       'arrival_time': transport.arrivalTime,
       'arrival_location': transport.arrivalLocation,
+
+      'segments': transport.segments
+          .map((segment) => segment.toJson())
+          .toList(),
+      'stops': transport.stops,
+      'layovers': transport.layovers,
     };
 
     final response = await http.post(
