@@ -6,6 +6,7 @@ from app.models.transport import TripTransport
 from app.schemas.trip import TransportCreate, TransportUpdate
 from app.services.transport_provider import transport_provider
 from app.services.cache_service import cache_service
+TRANSPORT_CACHE_TTL_MINUTES = 30
 
 
 def _prepare_transport_options(
@@ -34,51 +35,92 @@ def _prepare_transport_options(
     ]
 
 
+def _load_transport_cache(
+    cache,
+    expected_date,
+):
+    if not cache:
+        return None
+
+    data = cache_service.load_data(cache)
+
+    if not isinstance(data, dict):
+        return None
+
+    cached_date = data.get("search_date")
+
+    if cached_date != expected_date.isoformat():
+        return None
+
+    options = data.get("options")
+
+    if not isinstance(options, list):
+        return None
+
+    return options
+
+
 def generate_transport_options(
     trip,
     db: Session,
     refresh: bool = False,
+    search_date=None,
 ):
+    if search_date is None:
+        search_date = trip.start_date
+
     cache = cache_service.get(
         db=db,
         trip_id=trip.id,
         cache_type="transport",
         direction="outbound",
+        search_date=search_date,
     )
 
     if cache and not refresh:
         outdated = cache_service.is_expired(
             cache,
-            ttl_minutes=5,
+            ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
         )
 
-        options = cache_service.load_data(cache)
+        options = _load_transport_cache(
+            cache,
+            search_date,
+        )
 
-        return {
-            "options": _prepare_transport_options(
-                options,
-                trip,
-            ),
-            "cached": True,
-            "outdated": outdated,
-            "fetched_at": cache.fetched_at,
-            "expires_at": cache_service.get_expires_at(
-                cache,
-                ttl_minutes=5,
-            ),
-        }
+        if options is not None and not outdated:
+            return {
+                "options": _prepare_transport_options(
+                    options,
+                    trip,
+                ),
+                "cached": True,
+                "outdated": False,
+                "fetched_at": cache.fetched_at,
+                "expires_at": cache_service.get_expires_at(
+                    cache,
+                    ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
+                ),
+            }
 
     options = transport_provider.get_outbound_options(
-        trip
+        trip,
+        search_date=search_date,
     )
 
+    if options is None:
+        options = []
 
     cache = cache_service.save(
         db=db,
         trip_id=trip.id,
         cache_type="transport",
         direction="outbound",
-        data=options,
+        search_date=search_date,
+        data={
+            "search_date": search_date.isoformat(),
+            "options": options,
+        },
     )
 
     return {
@@ -91,7 +133,7 @@ def generate_transport_options(
         "fetched_at": cache.fetched_at,
         "expires_at": cache_service.get_expires_at(
             cache,
-            ttl_minutes=5,
+            ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
         ),
     }
 
@@ -100,46 +142,65 @@ def generate_return_transport_options(
     trip,
     db: Session,
     refresh: bool = False,
+    search_date=None,
 ):
+
+    if search_date is None:
+        search_date = trip.end_date
+
     cache = cache_service.get(
         db=db,
         trip_id=trip.id,
         cache_type="transport",
         direction="return",
+        search_date=search_date,
     )
+
 
     if cache and not refresh:
         outdated = cache_service.is_expired(
             cache,
-            ttl_minutes=5,
+            ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
         )
 
-        options = cache_service.load_data(cache)
+        options = _load_transport_cache(
+            cache,
+            search_date,
+        )
 
-        return {
-            "options": _prepare_transport_options(
-                options,
-                trip,
-            ),
-            "cached": True,
-            "outdated": outdated,
-            "fetched_at": cache.fetched_at,
-            "expires_at": cache_service.get_expires_at(
-                cache,
-                ttl_minutes=5,
-            ),
-        }
+        if options is not None and not outdated:
+            return {
+                "options": _prepare_transport_options(
+                    options,
+                    trip,
+                ),
+                "cached": True,
+                "outdated": False,
+                "fetched_at": cache.fetched_at,
+                "expires_at": cache_service.get_expires_at(
+                    cache,
+                    ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
+                ),
+            }
 
     options = transport_provider.get_return_options(
-        trip
+        trip,
+        search_date=search_date,
     )
+
+    if options is None:
+        options = []
 
     cache = cache_service.save(
         db=db,
         trip_id=trip.id,
         cache_type="transport",
         direction="return",
-        data=options,
+        search_date=search_date,
+        data={
+            "search_date": search_date.isoformat(),
+            "options": options,
+        },
     )
 
     return {
@@ -152,7 +213,7 @@ def generate_return_transport_options(
         "fetched_at": cache.fetched_at,
         "expires_at": cache_service.get_expires_at(
             cache,
-            ttl_minutes=5,
+            ttl_minutes=TRANSPORT_CACHE_TTL_MINUTES,
         ),
     }
 

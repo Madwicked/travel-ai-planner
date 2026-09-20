@@ -99,6 +99,24 @@ class ApiService {
     }
   }
 
+  static Future<void> updateTripDates({
+    required int tripId,
+    required String startDate,
+    required String endDate,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/dates');
+
+    final response = await http.put(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'start_date': startDate, 'end_date': endDate}),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+  }
+
   static Future<Map<String, dynamic>> getBudget({required int tripId}) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/budget');
 

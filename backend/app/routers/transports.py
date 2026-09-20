@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from datetime import date
 
 from app.database import SessionLocal
 from app.models.trip import Trip
@@ -107,6 +108,7 @@ def delete_transport_endpoint(
 def get_transport_options(
     trip_id: int,
     refresh: bool = Query(False),
+    search_date: date | None = Query(None),
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(
@@ -123,6 +125,7 @@ def get_transport_options(
         trip,
         db,
         refresh=refresh,
+        search_date=search_date,
     )
 
     return {
@@ -137,6 +140,7 @@ def get_transport_options(
 def get_return_transport_options(
     trip_id: int,
     refresh: bool = Query(False),
+    search_date: date | None = Query(None),
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(
@@ -153,6 +157,7 @@ def get_return_transport_options(
         trip,
         db,
         refresh=refresh,
+        search_date=search_date,
     )
 
     return {

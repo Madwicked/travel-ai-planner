@@ -5,12 +5,32 @@ from sqlalchemy.orm import Session
 
 from app.models.place import TripPlace
 from app.schemas.trip import PlaceCreate
-from app.services.place_provider import place_provider
-from app.services.location_provider import location_provider
 from app.services.cache_service import cache_service
+from app.services.geoapify_places import (
+    DEFAULT_LIMIT_PER_CATEGORY,
+    GeoapifyPlacesService,
+)
+from app.services.location_provider import location_provider
+from app.services.wikipedia_discovery import (
+    WikipediaDiscoveryService,
+)
+from app.services.wikipedia_place_matcher import (
+    WikipediaPlaceMatcher,
+)
+
 
 PLACES_CACHE_TTL_MINUTES = 30
-PLACES_CACHE_LIMIT = 500
+
+DEFAULT_DISCOVERY_RADIUS_KM = 25
+
+
+CATEGORY_LABELS = {
+    "attractions": "Attractions",
+    "nature": "Nature",
+    "entertainment": "Entertainment",
+    "food": "Food",
+    "shopping": "Shopping",
+}
 
 
 def _build_places_cache_type(
@@ -20,7 +40,9 @@ def _build_places_cache_type(
     radius_km: int | None,
     category: str | None,
     country_place_id: str | None,
-):
+    search: str | None,
+    search_type: str,
+) -> str:
     cache_params = {
         "trip_id": trip_id,
         "latitude": latitude,
@@ -28,6 +50,8 @@ def _build_places_cache_type(
         "radius_km": radius_km,
         "category": category,
         "country_place_id": country_place_id,
+        "search": search,
+        "search_type": search_type,
     }
 
     params_json = json.dumps(
@@ -40,7 +64,220 @@ def _build_places_cache_type(
         params_json.encode("utf-8")
     ).hexdigest()[:20]
 
-    return f"places_{digest}"
+    return f"places_v3{digest}"
+
+
+def _empty_places_response(
+    offset: int,
+    limit: int,
+) -> dict:
+    return {
+        "options": [],
+        "total": 0,
+        "offset": offset,
+        "limit": limit,
+        "has_more": False,
+    }
+
+
+def _build_trip_place(
+    trip_id: int,
+    place: PlaceCreate,
+) -> TripPlace:
+    return TripPlace(
+        trip_id=trip_id,
+        external_id=place.external_id,
+        source=place.source,
+        name=place.name,
+        city=place.city,
+        country=place.country,
+        category=place.category,
+        address=place.address,
+        latitude=place.latitude,
+        longitude=place.longitude,
+        rating=place.rating,
+        opening_hours=place.opening_hours,
+        opening_time=place.opening_time,
+        closing_time=place.closing_time,
+        visit_duration=place.visit_duration,
+    )
+
+
+def _place_to_dict(
+    place: TripPlace,
+) -> dict:
+    return {
+        "id": place.id,
+        "trip_id": place.trip_id,
+        "external_id": place.external_id,
+        "source": place.source,
+        "name": place.name,
+        "city": place.city,
+        "country": place.country,
+        "category": place.category,
+        "address": place.address,
+        "latitude": place.latitude,
+        "longitude": place.longitude,
+        "rating": place.rating,
+        "opening_hours": place.opening_hours,
+        "opening_time": place.opening_time,
+        "closing_time": place.closing_time,
+        "visit_duration": place.visit_duration,
+    }
+
+
+def _normalize_category(
+    category: str | None,
+) -> str | None:
+    if not category:
+        return None
+
+    category_key = category.strip().casefold()
+
+    return CATEGORY_LABELS.get(
+        category_key,
+        category,
+    )
+
+
+def _normalize_place_category(
+    place: dict,
+) -> dict:
+    normalized = dict(place)
+
+    category = normalized.get(
+        "category"
+    )
+
+    normalized["category"] = (
+        _normalize_category(category)
+    )
+
+    normalized.pop(
+        "_geo_categories",
+        None,
+    )
+
+    normalized.pop(
+        "_wikipedia_match",
+        None,
+    )
+
+    normalized.pop(
+        "_wikidata_id",
+        None,
+    )
+
+    return normalized
+
+
+def _load_places_from_geoapify(
+    latitude: float | None,
+    longitude: float | None,
+    radius_km: float | None,
+    country_place_id: str | None,
+    category: str | None,
+    city: str | None,
+    country: str | None,
+) -> list[dict]:
+    service = GeoapifyPlacesService()
+
+    category_key = (
+        category.casefold()
+        if category
+        else None
+    )
+
+    if country_place_id:
+        options = service.get_places_by_country(
+            country_place_id=country_place_id,
+            category=category_key,
+            limit=DEFAULT_LIMIT_PER_CATEGORY,
+        )
+    else:
+        options = service.get_places(
+            latitude=latitude,
+            longitude=longitude,
+            radius_km=(
+                radius_km
+                if radius_km is not None
+                else DEFAULT_DISCOVERY_RADIUS_KM
+            ),
+            category=category_key,
+            limit=DEFAULT_LIMIT_PER_CATEGORY,
+        )
+
+    if (
+        not country_place_id
+        and latitude is not None
+        and longitude is not None
+        and city
+        and country
+    ):
+        wikipedia_service = (
+            WikipediaDiscoveryService()
+        )
+
+        wikipedia_candidates = (
+            wikipedia_service.discover(
+                city=city,
+                country=country,
+                target_latitude=latitude,
+                target_longitude=longitude,
+                radius_km=(
+                    radius_km
+                    if radius_km is not None
+                    else DEFAULT_DISCOVERY_RADIUS_KM
+                ),
+            )
+        )
+
+        matcher = WikipediaPlaceMatcher()
+
+        print(
+            "\n=== WIKIPEDIA CANDIDATES ==="
+        )
+
+        for candidate in wikipedia_candidates[:30]:
+            print(
+                candidate.get("title"),
+                "|",
+                candidate.get("distance_km"),
+                "|",
+                candidate.get("wikidata_id"),
+            )
+
+
+
+
+        options = matcher.prioritize(
+            geoapify_places=options,
+            wikipedia_candidates=wikipedia_candidates,
+        )
+        print("\n=== EIFFEL DEBUG ===")
+
+        geoapify_eiffel = [
+            place
+            for place in options
+            if "eiffel" in (place.get("name") or "").lower()
+        ]
+
+        wikipedia_eiffel = [
+            candidate
+            for candidate in wikipedia_candidates
+            if "eiffel" in (candidate.get("title") or "").lower()
+        ]
+
+        print("Geoapify Eiffel:", geoapify_eiffel)
+        print("Wikipedia Eiffel:", wikipedia_eiffel)
+
+        print("=== END EIFFEL DEBUG ===\n")
+
+    return [
+        _normalize_place_category(option)
+        for option in options
+    ]
+
 
 def generate_place_options(
     trip,
@@ -56,30 +293,27 @@ def generate_place_options(
     longitude = trip.destination_longitude
     country_place_id = None
 
-    if search_type == "country" and not search:
-        country = trip.destination_country
+    city = trip.destination
+    country = trip.destination_country
 
+    if search_type == "country" and not search:
         if not country:
-            return {
-                "options": [],
-                "total": 0,
-                "offset": offset,
-                "limit": limit,
-                "has_more": False,
-            }
+            return _empty_places_response(
+                offset,
+                limit,
+            )
 
         country_place_id = (
-            location_provider.get_country_place_id(country)
+            location_provider.get_country_place_id(
+                country
+            )
         )
 
         if not country_place_id:
-            return {
-                "options": [],
-                "total": 0,
-                "offset": offset,
-                "limit": limit,
-                "has_more": False,
-            }
+            return _empty_places_response(
+                offset,
+                limit,
+            )
 
         latitude = None
         longitude = None
@@ -92,16 +326,17 @@ def generate_place_options(
         )
 
         if location is None:
-            return {
-                "options": [],
-                "total": 0,
-                "offset": offset,
-                "limit": limit,
-                "has_more": False,
-            }
+            return _empty_places_response(
+                offset,
+                limit,
+            )
 
         latitude = location["latitude"]
         longitude = location["longitude"]
+        city = location.get(
+            "name",
+            search,
+        )
 
     if (
         country_place_id is None
@@ -121,6 +356,8 @@ def generate_place_options(
         radius_km=radius_km,
         category=category,
         country_place_id=country_place_id,
+        search=search,
+        search_type=search_type,
     )
 
     cache = cache_service.get(
@@ -133,25 +370,33 @@ def generate_place_options(
         cache,
         PLACES_CACHE_TTL_MINUTES,
     ):
+        cached_data = cache_service.load_data(
+            cache
+        )
 
-        cached_data = cache_service.load_data(cache)
-
-        options = cached_data.get("options", [])
+        options = cached_data.get(
+            "options",
+            [],
+        )
 
     else:
+        if not city or not country:
+            return _empty_places_response(
+                offset,
+                limit,
+            )
 
-        result = place_provider.get_place_options(
-            trip,
+        options = _load_places_from_geoapify(
             latitude=latitude,
             longitude=longitude,
             radius_km=radius_km,
-            category=category,
-            offset=0,
-            limit=PLACES_CACHE_LIMIT,
             country_place_id=country_place_id,
+            category=category,
+            city=city,
+            country=country,
         )
 
-        options = result.get("options", [])
+
 
         cache_service.save(
             db=db,
@@ -161,15 +406,22 @@ def generate_place_options(
                 "options": options,
             },
         )
+
+    total = len(options)
+
+    paginated_options = options[
+        offset:offset + limit
+    ]
+
     return {
-        "options": options,
-        "total": len(options),
-        "offset": 0,
-        "limit": len(options),
-        "has_more": False,
+        "options": paginated_options,
+        "total": total,
+        "offset": offset,
+        "limit": len(paginated_options),
+        "has_more": (
+            offset + limit < total
+        ),
     }
-
-
 
 
 def delete_places(
@@ -195,22 +447,9 @@ def create_place(
     place: PlaceCreate,
     db: Session,
 ):
-    new_place = TripPlace(
-        trip_id=trip_id,
-        external_id=place.external_id,
-        source=place.source,
-        name=place.name,
-        city=place.city,
-        country=place.country,
-        category=place.category,
-        address=place.address,
-        latitude=place.latitude,
-        longitude=place.longitude,
-        rating=place.rating,
-        opening_hours=place.opening_hours,
-        opening_time=place.opening_time,
-        closing_time=place.closing_time,
-        visit_duration=place.visit_duration,
+    new_place = _build_trip_place(
+        trip_id,
+        place,
     )
 
     db.add(new_place)
@@ -219,25 +458,11 @@ def create_place(
 
     return {
         "message": "Place saved",
-        "place": {
-            "id": new_place.id,
-            "trip_id": new_place.trip_id,
-            "external_id": new_place.external_id,
-            "source": new_place.source,
-            "name": new_place.name,
-            "city": new_place.city,
-            "country": new_place.country,
-            "category": new_place.category,
-            "address": new_place.address,
-            "latitude": new_place.latitude,
-            "longitude": new_place.longitude,
-            "rating": new_place.rating,
-            "opening_hours": new_place.opening_hours,
-            "opening_time": new_place.opening_time,
-            "closing_time": new_place.closing_time,
-            "visit_duration": new_place.visit_duration,
-        },
+        "place": _place_to_dict(
+            new_place
+        ),
     }
+
 
 def create_places_bulk(
     trip_id: int,
@@ -245,22 +470,9 @@ def create_places_bulk(
     db: Session,
 ):
     new_places = [
-        TripPlace(
-            trip_id=trip_id,
-            external_id=place.external_id,
-            source=place.source,
-            name=place.name,
-            city=place.city,
-            country=place.country,
-            category=place.category,
-            address=place.address,
-            latitude=place.latitude,
-            longitude=place.longitude,
-            rating=place.rating,
-            opening_hours=place.opening_hours,
-            opening_time=place.opening_time,
-            closing_time=place.closing_time,
-            visit_duration=place.visit_duration,
+        _build_trip_place(
+            trip_id,
+            place
         )
         for place in places
     ]
@@ -276,24 +488,7 @@ def create_places_bulk(
         "trip_id": trip_id,
         "count": len(new_places),
         "places": [
-            {
-                "id": place.id,
-                "trip_id": place.trip_id,
-                "external_id": place.external_id,
-                "source": place.source,
-                "name": place.name,
-                "city": place.city,
-                "country": place.country,
-                "category": place.category,
-                "address": place.address,
-                "latitude": place.latitude,
-                "longitude": place.longitude,
-                "rating": place.rating,
-                "opening_hours": place.opening_hours,
-                "opening_time": place.opening_time,
-                "closing_time": place.closing_time,
-                "visit_duration": place.visit_duration,
-            }
+            _place_to_dict(place)
             for place in new_places
         ],
     }
@@ -305,7 +500,9 @@ def get_places(
 ):
     places = (
         db.query(TripPlace)
-        .filter(TripPlace.trip_id == trip_id)
+        .filter(
+            TripPlace.trip_id == trip_id
+        )
         .order_by(TripPlace.name)
         .all()
     )
@@ -313,27 +510,12 @@ def get_places(
     return {
         "trip_id": trip_id,
         "places": [
-            {
-                "id": place.id,
-                "trip_id": place.trip_id,
-                "external_id": place.external_id,
-                "source": place.source,
-                "name": place.name,
-                "city": place.city,
-                "country": place.country,
-                "category": place.category,
-                "address": place.address,
-                "latitude": place.latitude,
-                "longitude": place.longitude,
-                "rating": place.rating,
-                "opening_hours": place.opening_hours,
-                "opening_time": place.opening_time,
-                "closing_time": place.closing_time,
-                "visit_duration": place.visit_duration,
-            }
+            _place_to_dict(place)
             for place in places
         ],
     }
+
+
 def delete_place(
     trip_id: int,
     place_id: int,

@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.models.trip import Trip
 from app.schemas.trip import (
     TripCreate,
     TripResponse,
     CurrencyUpdate,
     FoodPreferenceUpdate,
+    TripDatesUpdate,
 )
 from app.services.trips import (
     create_trip,
@@ -15,6 +15,7 @@ from app.services.trips import (
     delete_trip,
     update_user_currency,
     update_food_preference,
+    update_trip_dates,
 )
 from app.services.budget import calculate_budget
 
@@ -74,6 +75,26 @@ def update_currency_endpoint(
 
     return result
 
+@router.put("/{trip_id}/dates")
+def update_trip_dates_endpoint(
+    trip_id: int,
+    dates: TripDatesUpdate,
+    db: Session = Depends(get_db),
+):
+    result = update_trip_dates(
+        trip_id=trip_id,
+        start_date=dates.start_date,
+        end_date=dates.end_date,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return result
 
 @router.put("/{trip_id}/food")
 def update_food_preference_endpoint(

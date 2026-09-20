@@ -20,14 +20,21 @@ class TripCreate(BaseModel):
 
     travelers: int = Field(ge=1)
 
-
-
     @model_validator(mode="after")
     def validate_dates(self):
         if self.end_date <= self.start_date:
             raise ValueError("end_date must be after start_date")
 
         return self
+
+class TripDatesUpdate(BaseModel):
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
 
 
 class TransportUpdate(BaseModel):
@@ -93,17 +100,18 @@ class PlaceCreate(BaseModel):
     city: str
     country: str | None = None
     category: str
-    address: str
+    address: str | None = None
 
     latitude: float | None = None
     longitude: float | None = None
+
 
     rating: float | None = None
 
     opening_hours: dict | None = None
 
-    opening_time: str
-    closing_time: str
+    opening_time: str | None = None
+    closing_time: str | None = None
 
     visit_duration: str | None = None
 

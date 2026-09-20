@@ -9,13 +9,17 @@ class TransportService {
   static Future<List<Transport>> getTransportOptions({
     required int tripId,
     required bool isReturnTransport,
+    String? searchDate,
   }) async {
     final endpoint = isReturnTransport ? 'return-options' : 'options';
 
     final direction = isReturnTransport ? 'return' : 'outbound';
 
-    final url = Uri.parse(
-      '${ApiConfig.baseUrl}/api/trips/$tripId/transports/$endpoint',
+    final baseUrl =
+        '${ApiConfig.baseUrl}/api/trips/$tripId/transports/$endpoint';
+
+    final url = Uri.parse(baseUrl).replace(
+      queryParameters: searchDate != null ? {'search_date': searchDate} : null,
     );
 
     final response = await http.get(url);

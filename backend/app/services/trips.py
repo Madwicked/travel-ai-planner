@@ -170,6 +170,34 @@ def update_food_preference(
         "food_preference": trip.food_preference,
     }
 
+def update_trip_dates(
+    trip_id: int,
+    start_date,
+    end_date,
+    db: Session,
+):
+    trip = (
+        db.query(Trip)
+        .filter(Trip.id == trip_id)
+        .first()
+    )
+
+    if not trip:
+        return None
+
+    trip.start_date = start_date
+    trip.end_date = end_date
+
+    db.commit()
+    db.refresh(trip)
+
+    return {
+        "message": "Trip dates updated",
+        "trip_id": trip.id,
+        "start_date": trip.start_date,
+        "end_date": trip.end_date,
+    }
+
 def delete_trip(
     trip_id: int,
     db: Session,

@@ -17,7 +17,7 @@ class TripPlace(Base):
     external_id = Column(String(255), nullable=True)
     source = Column(
         String(50),
-        nullable=False,
+        nullable=True,
         default="mock",
     )
 
@@ -25,7 +25,7 @@ class TripPlace(Base):
     city = Column(String(255), nullable=False)
     country = Column(String(255), nullable=True)
     category = Column(String(100), nullable=False)
-    address = Column(String(255), nullable=False)
+    address = Column(String(255), nullable=True)
 
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
@@ -34,7 +34,7 @@ class TripPlace(Base):
 
     opening_hours = Column(JSON, nullable=True)
 
-    opening_time = Column(String(10), nullable=False)
-    closing_time = Column(String(10), nullable=False)
+    opening_time = Column(String(10), nullable=True)
+    closing_time = Column(String(10), nullable=True)
 
     visit_duration = Column(String(20), nullable=True)

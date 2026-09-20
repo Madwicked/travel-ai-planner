@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.api_cache import ApiCache
@@ -13,6 +14,7 @@ class CacheService:
         trip_id: int,
         cache_type: str,
         direction: str | None = None,
+        search_date=None,
     ):
         query = (
             db.query(ApiCache)
@@ -31,6 +33,11 @@ class CacheService:
                 ApiCache.direction == direction
             )
 
+        if search_date is not None:
+            query = query.filter(
+                ApiCache.search_date == search_date
+            )
+
         return query.first()
 
     def save(
@@ -40,12 +47,14 @@ class CacheService:
         cache_type: str,
         data,
         direction: str | None = None,
+        search_date=None,
     ):
         cache = self.get(
             db=db,
             trip_id=trip_id,
             cache_type=cache_type,
             direction=direction,
+            search_date=search_date,
         )
 
         now = datetime.now(timezone.utc).replace(
@@ -53,23 +62,52 @@ class CacheService:
         )
 
         if cache:
-            cache.data = json.dumps(data, default=str)
+            cache.data = json.dumps(
+                data,
+                default=str,
+            )
             cache.fetched_at = now
-        else:
-            cache = ApiCache(
+
+            db.commit()
+            db.refresh(cache)
+
+            return cache
+
+        cache = ApiCache(
+            trip_id=trip_id,
+            cache_type=cache_type,
+            direction=direction,
+            search_date=search_date,
+            data=json.dumps(
+                data,
+                default=str,
+            ),
+            fetched_at=now,
+        )
+
+        db.add(cache)
+
+        try:
+            db.commit()
+            db.refresh(cache)
+
+            return cache
+
+        except IntegrityError:
+            db.rollback()
+
+            cache = self.get(
+                db=db,
                 trip_id=trip_id,
                 cache_type=cache_type,
                 direction=direction,
-                data=json.dumps(data, default=str),
-                fetched_at=now,
+                search_date=search_date,
             )
 
-            db.add(cache)
+            if cache is None:
+                raise
 
-        db.commit()
-        db.refresh(cache)
-
-        return cache
+            return cache
 
     def load_data(self, cache):
         return json.loads(cache.data)
@@ -99,6 +137,5 @@ class CacheService:
             cache.fetched_at
             + timedelta(minutes=ttl_minutes)
         )
-
 
 cache_service = CacheService()

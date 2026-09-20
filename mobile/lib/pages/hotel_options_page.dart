@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/hotel.dart';
+import '../models/hotel_filter_state.dart';
 import '../services/hotel_service.dart';
+import 'hotel_filters_page.dart';
+import 'hotel_rates_page.dart';
 
 class HotelOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -19,17 +22,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
   String? errorMessage;
 
   final TextEditingController searchController = TextEditingController();
-  final TextEditingController minPriceController = TextEditingController();
-  final TextEditingController maxPriceController = TextEditingController();
 
-  String? selectedMeal;
-  String? selectedAccommodationType;
-
-  bool refundableOnly = false;
-  bool petsAllowedOnly = false;
-  bool adultsOnly = false;
-
-  String sortOption = 'price';
+  HotelFilterState filters = const HotelFilterState();
 
   Future<void> loadHotelOptions() async {
     final tripId = widget.trip['id'];
@@ -59,141 +53,9 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
       return;
     }
 
-    final selectedRate = await showModalBottomSheet<HotelRate>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  hotel.name,
-                  style: const TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-
-                Text(
-                  'Choose room and meal plan',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-
-                const SizedBox(height: 16),
-
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: hotel.rateOptions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      final rate = hotel.rateOptions[index];
-
-                      return Card(
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () {
-                            Navigator.pop(context, rate);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  rate.roomName,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-
-                                if (rate.boardName.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 5),
-                                    child: Text(
-                                      rate.boardName,
-                                      style: TextStyle(
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                  ),
-
-                                const SizedBox(height: 8),
-
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      '${rate.pricePerNight.toStringAsFixed(2)} '
-                                      '${rate.currency}/night',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${rate.totalPrice.toStringAsFixed(2)} '
-                                      '${rate.currency}',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 8),
-
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: [
-                                    Chip(
-                                      label: Text(
-                                        rate.refundable
-                                            ? 'Refundable'
-                                            : 'Non-refundable',
-                                      ),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-
-                                    if (rate.taxesIncluded)
-                                      const Chip(
-                                        label: Text('Taxes included'),
-                                        visualDensity: VisualDensity.compact,
-                                      ),
-                                  ],
-                                ),
-
-                                if (rate.cancellationPolicies.isNotEmpty)
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 6),
-                                    child: Text(
-                                      'Cancellation policy available',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final selectedRate = await Navigator.push<HotelRate>(
+      context,
+      MaterialPageRoute(builder: (_) => HotelRatesPage(hotel: hotel)),
     );
 
     if (selectedRate == null || !mounted) {
@@ -219,8 +81,6 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
   @override
   void dispose() {
     searchController.dispose();
-    minPriceController.dispose();
-    maxPriceController.dispose();
     super.dispose();
   }
 
@@ -291,9 +151,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
   List<Hotel> get filteredOptions {
     final searchText = searchController.text.trim().toLowerCase();
 
-    final minPrice = double.tryParse(minPriceController.text.trim());
-
-    final maxPrice = double.tryParse(maxPriceController.text.trim());
+    final minPrice = filters.minPrice;
+    final maxPrice = filters.maxPrice;
 
     final filtered = options.where((option) {
       final matchesSearch =
@@ -306,19 +165,22 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
           maxPrice == null || option.pricePerNight <= maxPrice;
 
       final matchesMeal =
-          selectedMeal == null || hotelHasMeal(option, selectedMeal!);
+          filters.selectedMeal == null ||
+          hotelHasMeal(option, filters.selectedMeal!);
 
       final matchesRefundable =
-          !refundableOnly || hotelHasRefundableRate(option);
+          !filters.refundableOnly || hotelHasRefundableRate(option);
 
-      final matchesPets = !petsAllowedOnly || option.petsAllowed == true;
+      final matchesPets =
+          !filters.petsAllowedOnly || option.petsAllowed == true;
 
-      final matchesAdultsOnly = !adultsOnly || option.adultsOnly == true;
+      final matchesAdultsOnly =
+          !filters.adultsOnly || option.adultsOnly == true;
 
       final matchesAccommodation =
-          selectedAccommodationType == null ||
+          filters.selectedAccommodationType == null ||
           option.accommodationType?.toLowerCase() ==
-              selectedAccommodationType!.toLowerCase();
+              filters.selectedAccommodationType!.toLowerCase();
 
       return matchesSearch &&
           matchesMinPrice &&
@@ -330,7 +192,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
           matchesAccommodation;
     }).toList();
 
-    switch (sortOption) {
+    switch (filters.sortOption) {
       case 'price':
         filtered.sort((a, b) => a.pricePerNight.compareTo(b.pricePerNight));
         break;
@@ -361,302 +223,36 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
   }
 
   bool get hasActiveFilters {
-    return searchController.text.isNotEmpty ||
-        minPriceController.text.isNotEmpty ||
-        maxPriceController.text.isNotEmpty ||
-        selectedMeal != null ||
-        selectedAccommodationType != null ||
-        refundableOnly ||
-        petsAllowedOnly ||
-        adultsOnly ||
-        sortOption != 'price';
+    return searchController.text.isNotEmpty || filters.hasActiveFilters;
   }
 
   void clearFilters() {
     searchController.clear();
-    minPriceController.clear();
-    maxPriceController.clear();
 
     setState(() {
-      selectedMeal = null;
-      selectedAccommodationType = null;
-      refundableOnly = false;
-      petsAllowedOnly = false;
-      adultsOnly = false;
-      sortOption = 'price';
+      filters = const HotelFilterState();
     });
   }
 
-  void showFilters() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 8,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Filters',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      const Text(
-                        'Meals',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedMeal,
-                        decoration: InputDecoration(
-                          labelText: 'Meal plan',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: [
-                          const DropdownMenuItem<String>(
-                            value: null,
-                            child: Text('Any meal plan'),
-                          ),
-                          ...availableMeals.map(
-                            (meal) => DropdownMenuItem<String>(
-                              value: meal,
-                              child: Text(meal),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          setModalState(() {
-                            selectedMeal = value;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      const Text(
-                        'Accommodation type',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedAccommodationType,
-                        decoration: InputDecoration(
-                          labelText: 'Type',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: [
-                          const DropdownMenuItem<String>(
-                            value: null,
-                            child: Text('Any type'),
-                          ),
-                          ...availableAccommodationTypes.map(
-                            (type) => DropdownMenuItem<String>(
-                              value: type,
-                              child: Text(
-                                type,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          setModalState(() {
-                            selectedAccommodationType = value;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Refundable only'),
-                        value: refundableOnly,
-                        onChanged: (value) {
-                          setModalState(() {
-                            refundableOnly = value ?? false;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Pets allowed'),
-                        value: petsAllowedOnly,
-                        onChanged: (value) {
-                          setModalState(() {
-                            petsAllowedOnly = value ?? false;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Adults only'),
-                        value: adultsOnly,
-                        onChanged: (value) {
-                          setModalState(() {
-                            adultsOnly = value ?? false;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      const Text(
-                        'Sort by',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      RadioListTile<String>(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Price: low to high'),
-                        value: 'price',
-                        groupValue: sortOption,
-                        onChanged: (value) {
-                          setModalState(() {
-                            sortOption = value!;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      RadioListTile<String>(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Price: high to low'),
-                        value: 'price_desc',
-                        groupValue: sortOption,
-                        onChanged: (value) {
-                          setModalState(() {
-                            sortOption = value!;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      RadioListTile<String>(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Category: highest first'),
-                        subtitle: const Text('Based on hotel category / stars'),
-                        value: 'rating',
-                        groupValue: sortOption,
-                        onChanged: (value) {
-                          setModalState(() {
-                            sortOption = value!;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      RadioListTile<String>(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Category + price'),
-                        subtitle: const Text(
-                          'Higher category first, then cheaper',
-                        ),
-                        value: 'rating_price',
-                        groupValue: sortOption,
-                        onChanged: (value) {
-                          setModalState(() {
-                            sortOption = value!;
-                          });
-
-                          setState(() {});
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            setState(() {});
-                          },
-                          child: const Text('Apply filters'),
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton(
-                          onPressed: () {
-                            selectedMeal = null;
-                            selectedAccommodationType = null;
-                            refundableOnly = false;
-                            petsAllowedOnly = false;
-                            adultsOnly = false;
-                            sortOption = 'price';
-
-                            setModalState(() {});
-
-                            setState(() {});
-
-                            Navigator.pop(context);
-                          },
-                          child: const Text('Reset filters'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+  Future<void> showFilters() async {
+    final result = await Navigator.push<HotelFilterState>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HotelFiltersPage(
+          initialFilters: filters,
+          availableMeals: availableMeals,
+          availableAccommodationTypes: availableAccommodationTypes,
+        ),
+      ),
     );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    setState(() {
+      filters = result;
+    });
   }
 
   @override
@@ -744,75 +340,9 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
             ),
           ),
 
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: minPriceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  onChanged: (_) {
-                    setState(() {});
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'From per night €',
-                    hintText: 'Min',
-                    prefixIcon: const Icon(Icons.euro),
-                    suffixIcon: minPriceController.text.isNotEmpty
-                        ? IconButton(
-                            onPressed: () {
-                              minPriceController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.clear),
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: TextField(
-                  controller: maxPriceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  onChanged: (_) {
-                    setState(() {});
-                  },
-                  decoration: InputDecoration(
-                    labelText: 'To per night €',
-                    hintText: 'Max',
-                    prefixIcon: const Icon(Icons.euro),
-                    suffixIcon: maxPriceController.text.isNotEmpty
-                        ? IconButton(
-                            onPressed: () {
-                              maxPriceController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.clear),
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-
           const SizedBox(height: 12),
 
-          if (hasActiveFilters)
+          if (hasActiveFilters) ...[
             SizedBox(
               width: double.infinity,
               child: TextButton(
@@ -821,26 +351,36 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
               ),
             ),
 
-          if (hasActiveFilters)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (selectedMeal != null) Chip(label: Text(selectedMeal!)),
+                  if (filters.minPrice != null)
+                    Chip(label: Text('From €${filters.minPrice}')),
 
-                  if (selectedAccommodationType != null)
-                    Chip(label: Text(selectedAccommodationType!)),
+                  if (filters.maxPrice != null)
+                    Chip(label: Text('To €${filters.maxPrice}')),
 
-                  if (refundableOnly) const Chip(label: Text('Refundable')),
+                  if (filters.selectedMeal != null)
+                    Chip(label: Text(filters.selectedMeal!)),
 
-                  if (petsAllowedOnly) const Chip(label: Text('Pets allowed')),
+                  if (filters.selectedAccommodationType != null)
+                    Chip(label: Text(filters.selectedAccommodationType!)),
 
-                  if (adultsOnly) const Chip(label: Text('Adults only')),
+                  if (filters.refundableOnly)
+                    const Chip(label: Text('Refundable')),
+
+                  if (filters.petsAllowedOnly)
+                    const Chip(label: Text('Pets allowed')),
+
+                  if (filters.adultsOnly)
+                    const Chip(label: Text('Adults only')),
                 ],
               ),
             ),
+          ],
 
           if (filtered.isEmpty)
             const Padding(
@@ -892,6 +432,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                             children: [
                               Text(
                                 option.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -909,11 +451,14 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                                       color: Colors.amber,
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      option.categoryName!,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
+                                    Expanded(
+                                      child: Text(
+                                        option.categoryName!,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -924,6 +469,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                                   padding: const EdgeInsets.only(top: 4),
                                   child: Text(
                                     option.accommodationType!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Colors.grey.shade700,
@@ -935,6 +482,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
                               Text(
                                 option.city,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 15),
                               ),
 
@@ -985,6 +534,8 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                                 '${option.checkOut.day.toString().padLeft(2, '0')}.'
                                 '${option.checkOut.month.toString().padLeft(2, '0')}.'
                                 '${option.checkOut.year}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 15),
                               ),
 
@@ -1022,7 +573,10 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                                         child: Text(
                                           '${rate.roomName}'
                                           '${rate.boardName.isNotEmpty ? ' • ${rate.boardName}' : ''}'
-                                          ' • ${rate.pricePerNight.toStringAsFixed(2)} ${rate.currency}/night',
+                                          ' • ${rate.pricePerNight.toStringAsFixed(2)} '
+                                          '${rate.currency}/night',
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
                                             fontSize: 13,
                                             color: Colors.grey.shade700,

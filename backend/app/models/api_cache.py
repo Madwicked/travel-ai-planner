@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 
 from app.database import Base
 
@@ -27,6 +27,12 @@ class ApiCache(Base):
     direction = Column(
         String(20),
         nullable=True,
+    )
+
+    search_date = Column(
+        Date,
+        nullable=True,
+        index=True,
     )
 
     data = Column(

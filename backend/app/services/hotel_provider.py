@@ -89,14 +89,14 @@ class RealHotelProvider(HotelProvider):
             backend_dir
             / "certs"
             / "hotelbeds"
-            / "hotelbeds.pem"
+            / "hotelbeds_final.pem"
         )
 
         self.key_path = (
             backend_dir
             / "certs"
             / "hotelbeds"
-            / "hotelbeds_private.key"
+            / "hotelbeds_final_private.key"
         )
 
         if not self.api_key:

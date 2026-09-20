@@ -6,16 +6,16 @@ from app.services.airport_provider import airport_provider
 
 class TransportProvider(ABC):
     @abstractmethod
-    def get_outbound_options(self, trip):
+    def get_outbound_options(self, trip, search_date=None):
         pass
 
     @abstractmethod
-    def get_return_options(self, trip):
+    def get_return_options(self, trip, search_date=None):
         pass
 
 
 class MockTransportProvider(TransportProvider):
-    def get_outbound_options(self, trip):
+    def get_outbound_options(self, trip, search_date=None):
         origin_airport = airport_provider.find_airport(
             trip.origin,
             trip.origin_latitude,
@@ -148,7 +148,7 @@ class MockTransportProvider(TransportProvider):
 
 # transport_provider = MockTransportProvider()
 
-from app.services.real_transport_provider import RealTransportProvider
+from app.services.real_flight_provider import RealFlightProvider
 
 
-transport_provider = RealTransportProvider()
+transport_provider = RealFlightProvider()

@@ -8,6 +8,7 @@ backend/.pytest_cache/
 #chernoviki
 /backend/notes
 /backend/test_flightapi.py
+backend/test
 
 # Environment / secrets
 .env

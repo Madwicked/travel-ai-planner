@@ -137,9 +137,9 @@ class MockPlaceProvider(PlaceProvider):
             },
         ]
 
-from app.services.real_place_provider import RealPlaceProvider
+# from app.services.real_place_provider import RealPlaceProvider
 
 
-place_provider = RealPlaceProvider()
+# place_provider = RealPlaceProvider()
 
 # place_provider = MockPlaceProvider()

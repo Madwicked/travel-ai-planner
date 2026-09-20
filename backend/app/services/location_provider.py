@@ -1,12 +1,25 @@
+
 import os
 from abc import ABC, abstractmethod
 
 import requests
 
 
+GEOCODING_URL = "https://api.geoapify.com/v1/geocode/search"
+AUTOCOMPLETE_URL = (
+    "https://api.geoapify.com/v1/geocode/autocomplete"
+)
+
+REQUEST_TIMEOUT = 10
+DEFAULT_LANGUAGE = "en"
+
+
 class LocationProvider(ABC):
     @abstractmethod
-    def search_cities(self, query: str):
+    def search_cities(
+        self,
+        query: str,
+    ):
         pass
 
     @abstractmethod
@@ -18,53 +31,87 @@ class LocationProvider(ABC):
         pass
 
     @abstractmethod
-    def get_country_code(self, country: str):
+    def get_country_code(
+        self,
+        country: str,
+    ):
         pass
 
 
 class GeoapifyLocationProvider(LocationProvider):
     def __init__(self):
-        self.api_key = os.getenv("GEOAPIFY_API_KEY")
+        self.api_key = os.getenv(
+            "GEOAPIFY_API_KEY"
+        )
 
-    def search_cities(self, query: str):
-        query = query.strip()
-
-        if not query:
-            return []
-
+    def _require_api_key(self):
         if not self.api_key:
             raise RuntimeError(
                 "GEOAPIFY_API_KEY is not configured"
             )
 
-        url = "https://api.geoapify.com/v1/geocode/autocomplete"
-
-        params = {
-            "text": query,
-            "type": "city",
-            "limit": 10,
-            "lang": "en",
-            "apiKey": self.api_key,
-        }
+    def _search(
+        self,
+        query: str,
+        location_type: str,
+        limit: int = 1,
+    ) -> list[dict]:
+        self._require_api_key()
 
         response = requests.get(
-            url,
-            params=params,
-            timeout=10,
+            GEOCODING_URL,
+            params={
+                "text": query,
+                "type": location_type,
+                "limit": limit,
+                "lang": DEFAULT_LANGUAGE,
+                "apiKey": self.api_key,
+            },
+            timeout=REQUEST_TIMEOUT,
         )
 
         response.raise_for_status()
 
-        data = response.json()
+        return response.json().get(
+            "features",
+            [],
+        )
 
+    def search_cities(
+        self,
+        query: str,
+    ):
+        query = query.strip()
+
+        if not query:
+            return []
+
+        self._require_api_key()
+
+        response = requests.get(
+            AUTOCOMPLETE_URL,
+            params={
+                "text": query,
+                "type": "city",
+                "limit": 10,
+                "lang": DEFAULT_LANGUAGE,
+                "apiKey": self.api_key,
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+
+        response.raise_for_status()
 
         cities = []
         seen = set()
 
-        for feature in data.get("features", []):
+        for feature in response.json().get(
+            "features",
+            [],
+        ):
             properties = feature.get(
                 "properties",
-                {}
+                {},
             )
 
             city = properties.get("city")
@@ -104,6 +151,11 @@ class GeoapifyLocationProvider(LocationProvider):
 
             seen.add(key)
 
+            rank = properties.get(
+                "rank",
+                {},
+            )
+
             cities.append(
                 {
                     "name": city,
@@ -115,23 +167,17 @@ class GeoapifyLocationProvider(LocationProvider):
                     ),
                     "latitude": latitude,
                     "longitude": longitude,
-                    "_popularity": (
-                        properties
-                        .get("rank", {})
-                        .get("popularity", 0)
+                    "_popularity": rank.get(
+                        "popularity",
+                        0,
                     ),
-                    "_importance": (
-                        properties
-                        .get("rank", {})
-                        .get("importance", 0)
+                    "_importance": rank.get(
+                        "importance",
+                        0,
                     ),
-                    "_confidence": (
-                        properties
-                        .get("rank", {})
-                        .get(
-                            "confidence_city_level",
-                            0,
-                        )
+                    "_confidence": rank.get(
+                        "confidence_city_level",
+                        0,
                     ),
                 }
             )
@@ -170,34 +216,10 @@ class GeoapifyLocationProvider(LocationProvider):
                 "location_type must be 'city' or 'country'"
             )
 
-        if not self.api_key:
-            raise RuntimeError(
-                "GEOAPIFY_API_KEY is not configured"
-            )
-
-        url = "https://api.geoapify.com/v1/geocode/search"
-
-        params = {
-            "text": query,
-            "type": location_type,
-            "limit": 1,
-            "lang": "en",
-            "apiKey": self.api_key,
-        }
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        features = data.get(
-            "features",
-            [],
+        features = self._search(
+            query=query,
+            location_type=location_type,
+            limit=1,
         )
 
         if not features:
@@ -222,7 +244,10 @@ class GeoapifyLocationProvider(LocationProvider):
             ),
             "country": properties.get("country"),
             "country_code": (
-                properties.get("country_code", "").upper()
+                properties.get(
+                    "country_code",
+                    "",
+                ).upper()
                 if properties.get("country_code")
                 else None
             ),
@@ -230,7 +255,10 @@ class GeoapifyLocationProvider(LocationProvider):
             "longitude": longitude,
         }
 
-    def get_country_code(self, country: str):
+    def get_country_code(
+        self,
+        country: str,
+    ):
         location = self.search_locations(
             country,
             "country",
@@ -241,93 +269,69 @@ class GeoapifyLocationProvider(LocationProvider):
 
         return location["country_code"]
 
-    def get_country_bbox(self, country: str):
+    # def get_country_bbox(
+    #     self,
+    #     country: str,
+    # ):
+    #     query = country.strip()
+    #
+    #     if not query:
+    #         return None
+    #
+    #     features = self._search(
+    #         query=query,
+    #         location_type="country",
+    #         limit=1,
+    #     )
+    #
+    #     if not features:
+    #         return None
+    #
+    #     bbox = features[0].get("bbox")
+    #
+    #     if not bbox or len(bbox) != 4:
+    #         return None
+    #
+    #     return bbox
+
+    def get_country_place_id(
+        self,
+        country: str,
+    ):
         query = country.strip()
 
         if not query:
             return None
 
-        if not self.api_key:
-            raise RuntimeError(
-                "GEOAPIFY_API_KEY is not configured"
-            )
-
-        url = "https://api.geoapify.com/v1/geocode/search"
-
-        params = {
-            "text": query,
-            "type": "country",
-            "limit": 1,
-            "lang": "en",
-            "apiKey": self.api_key,
-        }
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10,
+        features = self._search(
+            query=query,
+            location_type="country",
+            limit=10,
         )
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        features = data.get("features", [])
-
-        if not features:
-            return None
-
-        bbox = features[0].get("bbox")
-
-        if not bbox or len(bbox) != 4:
-            return None
-
-        return bbox
-
-    def get_country_place_id(self, country: str):
-        query = country.strip()
-
-        if not query:
-            return None
-
-        if not self.api_key:
-            raise RuntimeError(
-                "GEOAPIFY_API_KEY is not configured"
+        for feature in features:
+            properties = feature.get(
+                "properties",
+                {},
             )
 
-        url = "https://api.geoapify.com/v1/geocode/search"
-
-        params = {
-            "text": query,
-            "type": "country",
-            "limit": 10,
-            "lang": "en",
-            "apiKey": self.api_key,
-        }
-
-        response = requests.get(
-            url,
-            params=params,
-            timeout=10,
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        for feature in data.get("features", []):
-            properties = feature.get("properties", {})
-
-            if properties.get("result_type") != "country":
+            if properties.get(
+                "result_type"
+            ) != "country":
                 continue
 
             if (
-                    properties.get("country", "").lower()
-                    != country.lower()
+                properties.get(
+                    "country",
+                    "",
+                ).lower()
+                != country.lower()
             ):
                 continue
 
-            place_id = properties.get("place_id")
+            place_id = properties.get(
+                "place_id"
+            )
 
             if place_id:
                 return place_id
@@ -336,5 +340,3 @@ class GeoapifyLocationProvider(LocationProvider):
 
 
 location_provider = GeoapifyLocationProvider()
-
-# location_provider = MockLocationProvider()
