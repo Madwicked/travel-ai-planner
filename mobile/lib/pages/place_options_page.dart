@@ -48,7 +48,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   final TextEditingController nameSearchController = TextEditingController();
 
   String nameSearch = '';
-  String selectedSort = 'Name';
+  String selectedSort = 'Significance';
 
   int currentOffset = 0;
   int pageSize = 50;
@@ -57,27 +57,75 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
   bool get hasMore => currentOffset < filteredOptions.length;
 
+  List<Place> _removeDuplicatesByCategory(List<Place> places) {
+    final seen = <String>{};
+    final result = <Place>[];
+
+    for (final place in places) {
+      final category = place.category.trim().toLowerCase();
+      final externalId = place.externalId?.trim();
+
+      final key = externalId != null && externalId.isNotEmpty
+          ? '$category|external:$externalId'
+          : '$category|name:${place.name.trim().toLowerCase()}';
+
+      if (seen.add(key)) {
+        result.add(place);
+      }
+    }
+
+    return result;
+  }
+
+  String _placeIdentity(Place place) {
+    final externalId = place.externalId?.trim();
+
+    if (externalId != null && externalId.isNotEmpty) {
+      return 'external:$externalId';
+    }
+
+    return 'name:${place.name.trim().toLowerCase()}'
+        '|city:${place.city.trim().toLowerCase()}';
+  }
+
   Future<void> loadPlaceOptions() async {
     final tripId = widget.trip['id'];
 
     try {
-      final result = await PlaceService.getPlaceOptions(
-        tripId: tripId,
-        radiusKm: useRadius ? radiusKm.round() : null,
-        searchType: searchType,
-        category: null,
-        offset: 0,
-        limit: 500,
-      );
+      setState(() {
+        isLoading = true;
+        errorMessage = null;
+      });
+
+      final categoriesToLoad = selectedCategories.contains('All')
+          ? categories.where((category) => category != 'All').toList()
+          : selectedCategories.toList();
+
+      final allOptions = <Place>[];
+
+      for (final category in categoriesToLoad) {
+        final result = await PlaceService.getPlaceOptions(
+          tripId: tripId,
+          radiusKm: useRadius ? radiusKm.round() : null,
+          searchType: searchType,
+          category: category,
+          offset: 0,
+          limit: 500,
+        );
+
+        allOptions.addAll(result.options);
+      }
 
       if (!mounted) return;
 
-      setState(() {
-        options = result.options;
+      final uniqueOptions = _removeDuplicatesByCategory(allOptions);
 
-        currentOffset = result.options.length > pageSize
+      setState(() {
+        options = uniqueOptions;
+
+        currentOffset = uniqueOptions.length > pageSize
             ? pageSize
-            : result.options.length;
+            : uniqueOptions.length;
 
         isLoading = false;
         isLoadingMore = false;
@@ -177,6 +225,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
     final newPlaces = selectedPlaces.where((place) {
       final key = '${place.name}|${place.city}|${place.address}';
+
       return !existingKeys.contains(key);
     }).toList();
 
@@ -226,11 +275,32 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       }
     }
 
-    final selected = filteredIndexes
+    final displayIndexes = <int>[];
+
+    if (selectedCategories.contains('All')) {
+      final seenPlaces = <String>{};
+
+      for (final index in filteredIndexes) {
+        final place = options[index];
+        final identity = _placeIdentity(place);
+
+        if (seenPlaces.add(identity)) {
+          displayIndexes.add(index);
+        }
+      }
+    } else {
+      displayIndexes.addAll(filteredIndexes);
+    }
+
+    if (selectedSort == 'Significance') {
+      return displayIndexes.map((index) => options[index]).toList();
+    }
+
+    final selected = displayIndexes
         .where((index) => selectedIndexes.contains(index))
         .toList();
 
-    final unselected = filteredIndexes
+    final unselected = displayIndexes
         .where((index) => !selectedIndexes.contains(index))
         .toList();
 
@@ -275,7 +345,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   void clearFilters() {
     setState(() {
       selectedCategories = {'All'};
-      selectedSort = 'Name';
+      selectedSort = 'Significance';
       searchType = 'city';
 
       useRadius = false;
@@ -397,7 +467,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                           ),
                         ),
                         const SizedBox(height: 6),
-
                         Row(
                           children: [
                             if (option.distanceKm != null) ...[
@@ -437,8 +506,10 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                         Row(
                           children: [
                             Text(
-                              '${option.openingTime}–'
-                              '${option.closingTime}',
+                              option.openingTime != null &&
+                                      option.closingTime != null
+                                  ? '${option.openingTime}–${option.closingTime}'
+                                  : 'Opening hours unavailable',
                               style: const TextStyle(fontSize: 12),
                             ),
                             const SizedBox(width: 12),
@@ -601,9 +672,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
           ),
           const SizedBox(height: 16),
 
-          // --------------------------------------------------
-          // RADIUS
-          // --------------------------------------------------
           if (searchType == 'city') ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -618,6 +686,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                     setState(() {
                       useRadius = value;
                     });
+
+                    loadPlaceOptions();
                   },
                 ),
               ],
@@ -646,14 +716,14 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                   radiusKm = value;
                 });
               },
+              onChangeEnd: (_) {
+                loadPlaceOptions();
+              },
             ),
           ],
 
           const SizedBox(height: 12),
 
-          // --------------------------------------------------
-          // NAME SEARCH
-          // --------------------------------------------------
           TextField(
             controller: nameSearchController,
             decoration: InputDecoration(
@@ -674,9 +744,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 12),
 
-          // --------------------------------------------------
-          // SEARCH AREA
-          // --------------------------------------------------
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -717,9 +784,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 12),
 
-          // --------------------------------------------------
-          // CLEAR FILTERS
-          // --------------------------------------------------
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -731,9 +795,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 4),
 
-          // --------------------------------------------------
-          // VIEW MODE
-          // --------------------------------------------------
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -762,9 +823,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 16),
 
-          // --------------------------------------------------
           // CATEGORY FILTER
-          // --------------------------------------------------
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -788,14 +847,18 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                       }
 
                       if (selectedCategories.isEmpty) {
-                        selectedCategories.add('All');
+                        selectedCategories = {'All'};
                       }
                     }
 
                     selectedIndexes.clear();
-
-                    currentOffset = pageSize.clamp(0, filteredOptions.length);
+                    currentOffset = 0;
+                    options = [];
+                    isLoading = true;
+                    errorMessage = null;
                   });
+
+                  loadPlaceOptions();
                 },
               );
             }).toList(),
@@ -803,9 +866,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 14),
 
-          // --------------------------------------------------
-          // SORT
-          // --------------------------------------------------
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -816,6 +876,10 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
               DropdownButton<String>(
                 value: selectedSort,
                 items: const [
+                  DropdownMenuItem(
+                    value: 'Significance',
+                    child: Text('Significance'),
+                  ),
                   DropdownMenuItem(value: 'Name', child: Text('Name')),
                   DropdownMenuItem(value: 'Distance', child: Text('Distance')),
                   DropdownMenuItem(value: 'Rating', child: Text('Rating')),
@@ -833,9 +897,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 12),
 
-          // --------------------------------------------------
-          // RESULTS COUNT
-          // --------------------------------------------------
           Text(
             '${filteredOptions.length} places found',
             style: TextStyle(
@@ -847,14 +908,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 10),
 
-          // --------------------------------------------------
-          // RESULTS
-          // --------------------------------------------------
           isListView ? buildListView() : buildCardView(),
 
-          // --------------------------------------------------
-          // LOAD MORE
-          // --------------------------------------------------
           if (hasMore && visibleOptions.isNotEmpty) ...[
             const SizedBox(height: 16),
             Center(

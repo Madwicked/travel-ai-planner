@@ -17,8 +17,8 @@ class Place {
 
   final Map<String, dynamic>? openingHours;
 
-  final String openingTime;
-  final String closingTime;
+  final String? openingTime;
+  final String? closingTime;
 
   final String? visitDuration;
 
@@ -50,6 +50,14 @@ class Place {
       return value.toString();
     }
 
+    Map<String, dynamic>? asMap(dynamic value) {
+      if (value is Map) {
+        return Map<String, dynamic>.from(value);
+      }
+
+      return null;
+    }
+
     return Place(
       distanceKm: (json['distance_km'] as num?)?.toDouble(),
 
@@ -77,13 +85,11 @@ class Place {
 
       rating: (json['rating'] as num?)?.toDouble(),
 
-      openingHours: json['opening_hours'] != null
-          ? Map<String, dynamic>.from(json['opening_hours'])
-          : null,
+      openingHours: asMap(json['opening_hours']),
 
-      openingTime: asString(json['opening_time']) ?? '09:00',
+      openingTime: asString(json['opening_time']),
 
-      closingTime: asString(json['closing_time']) ?? '19:00',
+      closingTime: asString(json['closing_time']),
 
       visitDuration: asString(json['visit_duration']),
     );

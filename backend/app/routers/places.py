@@ -42,7 +42,9 @@ def get_place_options(
             pattern="^(city|country)$",
         ),
     db: Session = Depends(get_db),
+
 ):
+
     trip = db.query(Trip).filter(
         Trip.id == trip_id
     ).first()
@@ -62,6 +64,7 @@ def get_place_options(
         limit=limit,
         search=search,
         search_type=search_type,
+
     )
 
     return {

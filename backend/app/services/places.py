@@ -14,9 +14,6 @@ from app.services.location_provider import location_provider
 from app.services.wikipedia_discovery import (
     WikipediaDiscoveryService,
 )
-from app.services.wikipedia_place_matcher import (
-    WikipediaPlaceMatcher,
-)
 
 
 PLACES_CACHE_TTL_MINUTES = 30
@@ -38,7 +35,6 @@ def _build_places_cache_type(
     latitude: float | None,
     longitude: float | None,
     radius_km: int | None,
-    category: str | None,
     country_place_id: str | None,
     search: str | None,
     search_type: str,
@@ -48,7 +44,6 @@ def _build_places_cache_type(
         "latitude": latitude,
         "longitude": longitude,
         "radius_km": radius_km,
-        "category": category,
         "country_place_id": country_place_id,
         "search": search,
         "search_type": search_type,
@@ -64,7 +59,7 @@ def _build_places_cache_type(
         params_json.encode("utf-8")
     ).hexdigest()[:20]
 
-    return f"places_v3{digest}"
+    return f"places_v5_{digest}"
 
 
 def _empty_places_response(
@@ -171,111 +166,253 @@ def _normalize_place_category(
     return normalized
 
 
+def _build_wikipedia_place(
+    candidate: dict,
+    category: str,
+    city: str | None,
+    country: str | None,
+) -> dict:
+    return {
+        "external_id": candidate.get(
+            "wikidata_id"
+        ),
+        "source": "wikipedia",
+        "name": candidate.get(
+            "title"
+        ),
+        "city": city,
+        "country": country,
+        "category": category,
+        "address": None,
+        "latitude": candidate.get(
+            "latitude"
+        ),
+        "longitude": candidate.get(
+            "longitude"
+        ),
+        "distance_km": candidate.get(
+            "distance_km"
+        ),
+        "rating": None,
+        "opening_hours": None,
+        "opening_time": None,
+        "closing_time": None,
+        "visit_duration": None,
+    }
+
+
+def _load_wikipedia_city_places(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+    city: str,
+    country: str,
+    category: str,
+) -> list[dict]:
+    wikipedia_service = WikipediaDiscoveryService()
+
+    candidates = wikipedia_service.discover(
+        city=city,
+        country=country,
+        target_latitude=latitude,
+        target_longitude=longitude,
+        radius_km=radius_km,
+        category=category,
+    )
+
+    options = [
+        _build_wikipedia_place(
+            candidate=candidate,
+            category=category,
+            city=city,
+            country=country,
+        )
+        for candidate in candidates
+    ]
+
+    return [
+        _normalize_place_category(option)
+        for option in options
+        if option.get("name")
+        and option.get("latitude") is not None
+        and option.get("longitude") is not None
+    ]
+
+
+def _load_wikipedia_country_places(
+    country: str,
+    category: str,
+) -> list[dict]:
+    wikipedia_service = WikipediaDiscoveryService()
+
+    candidates = (
+        wikipedia_service.discover_by_country(
+            country=country,
+            category=category,
+        )
+    )
+
+    options = [
+        _build_wikipedia_place(
+            candidate=candidate,
+            category=category,
+            city=None,
+            country=country,
+        )
+        for candidate in candidates
+    ]
+
+    return [
+        _normalize_place_category(option)
+        for option in options
+        if option.get("name")
+        and option.get("latitude") is not None
+        and option.get("longitude") is not None
+    ]
+
+
 def _load_places_from_geoapify(
     latitude: float | None,
     longitude: float | None,
     radius_km: float | None,
     country_place_id: str | None,
-    category: str | None,
     city: str | None,
     country: str | None,
 ) -> list[dict]:
     service = GeoapifyPlacesService()
 
-    category_key = (
-        category.casefold()
-        if category
-        else None
+    discovery_radius = (
+        radius_km
+        if radius_km is not None
+        else DEFAULT_DISCOVERY_RADIUS_KM
     )
 
-    if country_place_id:
-        options = service.get_places_by_country(
-            country_place_id=country_place_id,
-            category=category_key,
-            limit=DEFAULT_LIMIT_PER_CATEGORY,
-        )
-    else:
-        options = service.get_places(
-            latitude=latitude,
-            longitude=longitude,
-            radius_km=(
-                radius_km
-                if radius_km is not None
-                else DEFAULT_DISCOVERY_RADIUS_KM
-            ),
-            category=category_key,
-            limit=DEFAULT_LIMIT_PER_CATEGORY,
-        )
+    options = []
 
+    # ---------------------------------------------------------
+    # City search:
+    # Attractions / Nature / Entertainment -> Wikipedia
+    # Food / Shopping -> Geoapify
+    # ---------------------------------------------------------
     if (
-        not country_place_id
+        country_place_id is None
         and latitude is not None
         and longitude is not None
         and city
         and country
     ):
-        wikipedia_service = (
-            WikipediaDiscoveryService()
+        wikipedia_service = WikipediaDiscoveryService()
+
+        candidates = wikipedia_service.discover_all_categories(
+            city=city,
+            country=country,
+            target_latitude=latitude,
+            target_longitude=longitude,
+            radius_km=discovery_radius,
         )
 
-        wikipedia_candidates = (
-            wikipedia_service.discover(
-                city=city,
-                country=country,
-                target_latitude=latitude,
-                target_longitude=longitude,
-                radius_km=(
-                    radius_km
-                    if radius_km is not None
-                    else DEFAULT_DISCOVERY_RADIUS_KM
-                ),
+        options.extend(
+            _normalize_place_category(
+                _build_wikipedia_place(
+                    candidate=candidate,
+                    category=candidate["source_category"],
+                    city=city,
+                    country=country,
+                )
             )
+            for candidate in candidates
+            if candidate.get("title")
+            and candidate.get("latitude") is not None
+            and candidate.get("longitude") is not None
         )
 
-        matcher = WikipediaPlaceMatcher()
-
-        print(
-            "\n=== WIKIPEDIA CANDIDATES ==="
+        geo_options = service.get_places_by_categories(
+            latitude=latitude,
+            longitude=longitude,
+            radius_km=discovery_radius,
+            categories=[
+                "food",
+                "shopping",
+            ],
+            limit=DEFAULT_LIMIT_PER_CATEGORY,
         )
 
-        for candidate in wikipedia_candidates[:30]:
-            print(
-                candidate.get("title"),
-                "|",
-                candidate.get("distance_km"),
-                "|",
-                candidate.get("wikidata_id"),
-            )
-
-
-
-
-        options = matcher.prioritize(
-            geoapify_places=options,
-            wikipedia_candidates=wikipedia_candidates,
+        options.extend(
+            _normalize_place_category(option)
+            for option in geo_options
         )
-        print("\n=== EIFFEL DEBUG ===")
 
-        geoapify_eiffel = [
-            place
-            for place in options
-            if "eiffel" in (place.get("name") or "").lower()
+        return [
+            option
+            for option in options
+            if option.get("name")
+            and option.get("latitude") is not None
+            and option.get("longitude") is not None
         ]
 
-        wikipedia_eiffel = [
-            candidate
-            for candidate in wikipedia_candidates
-            if "eiffel" in (candidate.get("title") or "").lower()
+
+    # ---------------------------------------------------------
+    # Country search:
+    # Attractions / Nature / Entertainment -> Wikipedia
+    # Food / Shopping -> Geoapify
+    # ---------------------------------------------------------
+    if (
+        country_place_id
+        and country
+    ):
+        for wikipedia_category in (
+            "Attractions",
+            "Nature",
+            "Entertainment",
+        ):
+            options.extend(
+                _load_wikipedia_country_places(
+                    country=country,
+                    category=wikipedia_category,
+                )
+            )
+
+        geo_options = service.get_places_by_country_categories(
+            country_place_id=country_place_id,
+            categories=[
+                "food",
+                "shopping",
+            ],
+            limit=DEFAULT_LIMIT_PER_CATEGORY,
+        )
+
+        options.extend(
+            _normalize_place_category(option)
+            for option in geo_options
+        )
+
+        return [
+            option
+            for option in options
+            if option.get("name")
+            and option.get("latitude") is not None
+            and option.get("longitude") is not None
         ]
 
-        print("Geoapify Eiffel:", geoapify_eiffel)
-        print("Wikipedia Eiffel:", wikipedia_eiffel)
+    return []
 
-        print("=== END EIFFEL DEBUG ===\n")
+
+def _filter_by_category(
+    options: list[dict],
+    category: str | None,
+) -> list[dict]:
+    if not category:
+        return options
+
+    normalized_category = _normalize_category(
+        category
+    )
 
     return [
-        _normalize_place_category(option)
+        option
         for option in options
+        if option.get("category")
+        == normalized_category
     ]
 
 
@@ -296,6 +433,9 @@ def generate_place_options(
     city = trip.destination
     country = trip.destination_country
 
+    # ---------------------------------------------------------
+    # Country search
+    # ---------------------------------------------------------
     if search_type == "country" and not search:
         if not country:
             return _empty_places_response(
@@ -319,6 +459,9 @@ def generate_place_options(
         longitude = None
         radius_km = None
 
+    # ---------------------------------------------------------
+    # Explicit location search
+    # ---------------------------------------------------------
     elif search:
         location = location_provider.search_locations(
             search,
@@ -333,6 +476,7 @@ def generate_place_options(
 
         latitude = location["latitude"]
         longitude = location["longitude"]
+
         city = location.get(
             "name",
             search,
@@ -349,15 +493,32 @@ def generate_place_options(
             "Destination coordinates are required"
         )
 
+    # ---------------------------------------------------------
+    # Cache contains ALL categories.
+    # Category is intentionally NOT part of cache key.
+    # ---------------------------------------------------------
     cache_type = _build_places_cache_type(
         trip_id=trip.id,
         latitude=latitude,
         longitude=longitude,
         radius_km=radius_km,
-        category=category,
         country_place_id=country_place_id,
         search=search,
         search_type=search_type,
+    )
+    print(
+        "PLACES CACHE KEY:",
+        {
+            "trip_id": trip.id,
+            "latitude": latitude,
+            "longitude": longitude,
+            "radius_km": radius_km,
+            "country_place_id": country_place_id,
+            "search": search,
+            "search_type": search_type,
+            "category": category,
+            "cache_type": cache_type,
+        }
     )
 
     cache = cache_service.get(
@@ -391,12 +552,9 @@ def generate_place_options(
             longitude=longitude,
             radius_km=radius_km,
             country_place_id=country_place_id,
-            category=category,
             city=city,
             country=country,
         )
-
-
 
         cache_service.save(
             db=db,
@@ -406,6 +564,36 @@ def generate_place_options(
                 "options": options,
             },
         )
+
+    # ---------------------------------------------------------
+    # Category filtering happens AFTER cache loading.
+    # ---------------------------------------------------------
+    print(
+        "BEFORE CATEGORY FILTER:",
+        {
+            "total": len(options),
+            "categories": {
+                category_name: sum(
+                    1
+                    for option in options
+                    if option.get("category") == category_name
+                )
+                for category_name in [
+                    "Attractions",
+                    "Nature",
+                    "Entertainment",
+                    "Food",
+                    "Shopping",
+                ]
+            },
+            "requested_category": category,
+        },
+    )
+
+    options = _filter_by_category(
+        options,
+        category,
+    )
 
     total = len(options)
 
@@ -472,7 +660,7 @@ def create_places_bulk(
     new_places = [
         _build_trip_place(
             trip_id,
-            place
+            place,
         )
         for place in places
     ]

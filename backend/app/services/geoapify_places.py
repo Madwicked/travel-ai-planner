@@ -1,4 +1,5 @@
 import os
+import re
 from math import atan2, cos, radians, sin, sqrt
 
 import requests
@@ -74,12 +75,19 @@ class GeoapifyPlacesService:
             if not categories:
                 return []
 
-            return self._request(
+            places = self._request(
                 latitude=latitude,
                 longitude=longitude,
                 radius_km=radius_km,
                 categories=categories,
                 limit=limit,
+            )
+
+            for place in places:
+                place["category"] = category
+
+            return self._deduplicate(
+                places
             )
 
         places = []
@@ -95,6 +103,52 @@ class GeoapifyPlacesService:
 
             for place in category_places:
                 place["category"] = category_name
+
+            places.extend(category_places)
+
+        return self._deduplicate(
+            places
+        )
+
+    def get_places_by_categories(
+        self,
+        latitude: float,
+        longitude: float,
+        radius_km: float,
+        categories: list[str],
+        limit: int = DEFAULT_LIMIT_PER_CATEGORY,
+    ) -> list[dict]:
+        if not self.api_key:
+            raise RuntimeError(
+                "GEOAPIFY_API_KEY is not configured"
+            )
+
+        places = []
+
+        for category in categories:
+            category_mapping = CATEGORY_MAP.get(
+                category
+            )
+
+            if not category_mapping:
+                continue
+
+            category_places = self._request(
+                latitude=latitude,
+                longitude=longitude,
+                radius_km=radius_km,
+                categories=category_mapping,
+                limit=limit,
+            )
+
+            for place in category_places:
+                place["category"] = (
+                    "Food"
+                    if category == "food"
+                    else "Shopping"
+                    if category == "shopping"
+                    else category
+                )
 
             places.extend(category_places)
 
@@ -124,10 +178,17 @@ class GeoapifyPlacesService:
             if not categories:
                 return []
 
-            return self._request(
+            places = self._request(
                 categories=categories,
                 limit=limit,
                 country_place_id=country_place_id,
+            )
+
+            for place in places:
+                place["category"] = category
+
+            return self._deduplicate(
+                places
             )
 
         places = []
@@ -141,6 +202,51 @@ class GeoapifyPlacesService:
 
             for place in category_places:
                 place["category"] = category_name
+
+            places.extend(category_places)
+
+        return self._deduplicate(
+            places
+        )
+
+    def get_places_by_country_categories(
+        self,
+        country_place_id: str,
+        categories: list[str],
+        limit: int = DEFAULT_LIMIT_PER_CATEGORY,
+    ) -> list[dict]:
+        if not self.api_key:
+            raise RuntimeError(
+                "GEOAPIFY_API_KEY is not configured"
+            )
+
+        if not country_place_id:
+            return []
+
+        places = []
+
+        for category in categories:
+            category_mapping = CATEGORY_MAP.get(
+                category
+            )
+
+            if not category_mapping:
+                continue
+
+            category_places = self._request(
+                categories=category_mapping,
+                limit=limit,
+                country_place_id=country_place_id,
+            )
+
+            for place in category_places:
+                place["category"] = (
+                    "Food"
+                    if category == "food"
+                    else "Shopping"
+                    if category == "shopping"
+                    else category
+                )
 
             places.extend(category_places)
 
@@ -197,25 +303,6 @@ class GeoapifyPlacesService:
             return []
 
         data = response.json()
-
-        if "attraction" in categories or "sights" in categories:
-            raw_eiffel = [
-                feature.get("properties", {}).get("name")
-                for feature in data.get("features", [])
-                if "eiffel" in (
-                        feature.get("properties", {}).get("name") or ""
-                ).lower()
-            ]
-
-            print(
-                "GEOAPIFY RAW EIFFEL:",
-                raw_eiffel,
-            )
-
-            print(
-                "GEOAPIFY RAW COUNT:",
-                len(data.get("features", [])),
-            )
 
         places = []
 
@@ -286,6 +373,22 @@ class GeoapifyPlacesService:
             [],
         )
 
+        opening_hours = properties.get(
+            "opening_hours"
+        )
+
+        opening_time, closing_time = (
+            self._parse_opening_hours(
+                opening_hours
+            )
+        )
+
+        opening_time, closing_time = (
+            self._parse_opening_hours(
+                opening_hours
+            )
+        )
+
         return {
             "external_id": properties.get(
                 "place_id"
@@ -308,14 +411,89 @@ class GeoapifyPlacesService:
             "rating": properties.get(
                 "rating"
             ),
-            "opening_hours": properties.get(
-                "opening_hours"
-            ),
-            "opening_time": None,
-            "closing_time": None,
+            "opening_hours": opening_hours,
+            "opening_time": opening_time,
+            "closing_time": closing_time,
             "visit_duration": None,
             "_geo_categories": categories,
         }
+
+    def _parse_opening_hours(
+        self,
+        opening_hours,
+    ) -> tuple[str | None, str | None]:
+        if not opening_hours:
+            return None, None
+
+        if isinstance(opening_hours, dict):
+            time_ranges = []
+
+            for value in opening_hours.values():
+                if isinstance(value, str):
+                    time_ranges.extend(
+                        re.findall(
+                            r"\b\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\b",
+                            value,
+                        )
+                    )
+
+            if time_ranges:
+                return self._extract_time_range(
+                    time_ranges[0]
+                )
+
+            return None, None
+
+        if not isinstance(opening_hours, str):
+            return None, None
+
+        match = re.search(
+            r"\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b",
+            opening_hours,
+        )
+
+        if not match:
+            return None, None
+
+        return (
+            self._normalize_time(
+                match.group(1)
+            ),
+            self._normalize_time(
+                match.group(2)
+            ),
+        )
+
+    def _extract_time_range(
+        self,
+        value: str,
+    ) -> tuple[str | None, str | None]:
+        match = re.search(
+            r"\b(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\b",
+            value,
+        )
+
+        if not match:
+            return None, None
+
+        return (
+            self._normalize_time(
+                match.group(1)
+            ),
+            self._normalize_time(
+                match.group(2)
+            ),
+        )
+
+    def _normalize_time(
+        self,
+        value: str,
+    ) -> str:
+        hour, minute = value.split(":")
+
+        return (
+            f"{int(hour):02d}:{int(minute):02d}"
+        )
 
     def _deduplicate(
         self,
@@ -329,14 +507,24 @@ class GeoapifyPlacesService:
                 "external_id"
             )
 
+            category = place.get(
+                "category"
+            )
+
             if external_id:
-                if external_id in unique:
+                key = (
+                    category,
+                    external_id,
+                )
+
+                if key in unique:
                     continue
 
-                unique[external_id] = place
+                unique[key] = place
                 continue
 
             key = (
+                category,
                 place.get("name"),
                 place.get("latitude"),
                 place.get("longitude"),
