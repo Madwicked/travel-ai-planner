@@ -7,8 +7,13 @@ import '../services/transport_service.dart';
 
 class TransportSearchPage extends StatefulWidget {
   final Map<String, dynamic> trip;
+  final String? transportType;
 
-  const TransportSearchPage({super.key, required this.trip});
+  const TransportSearchPage({
+    super.key,
+    required this.trip,
+    this.transportType,
+  });
 
   @override
   State<TransportSearchPage> createState() => _TransportSearchPage();
@@ -37,17 +42,55 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
   final Set<String> departureTimeRanges = {};
 
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollToTop = false;
+
+  int currentOffset = 0;
+  int pageSize = 50;
+
+  bool isLoadingMore = false;
+
+  bool get hasMore => currentOffset < filteredAndSortedOptions.length;
+
   bool get isReturnTransport => widget.trip['return_transport'] == true;
 
   @override
   void initState() {
     super.initState();
 
+    _scrollController.addListener(_handleScroll);
+
     searchDate = isReturnTransport
         ? widget.trip['end_date']
         : widget.trip['start_date'];
 
     loadTransportOptions();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    final shouldShow = _scrollController.offset > 500;
+
+    if (shouldShow != _showScrollToTop && mounted) {
+      setState(() {
+        _showScrollToTop = shouldShow;
+      });
+    }
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
   }
 
   String formatDateForDisplay(String date) {
@@ -58,6 +101,18 @@ class _TransportSearchPage extends State<TransportSearchPage> {
     }
 
     return '${parts[2]}.${parts[1]}.${parts[0]}';
+  }
+
+  bool _matchesTransportType(Transport option) {
+    if (widget.transportType == null) {
+      return true;
+    }
+
+    if (widget.transportType == 'Flight') {
+      return option.type.startsWith('Flight');
+    }
+
+    return option.type == widget.transportType;
   }
 
   Future<void> loadTransportOptions() async {
@@ -77,11 +132,21 @@ class _TransportSearchPage extends State<TransportSearchPage> {
         searchDate: searchDate,
       );
 
+      final filteredOptions = loadedOptions
+          .where(_matchesTransportType)
+          .toList();
+
       if (!mounted) return;
 
       setState(() {
-        options = loadedOptions;
+        options = filteredOptions;
+
+        currentOffset = filteredOptions.length > pageSize
+            ? pageSize
+            : filteredOptions.length;
+
         isLoading = false;
+        isLoadingMore = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -89,8 +154,24 @@ class _TransportSearchPage extends State<TransportSearchPage> {
       setState(() {
         errorMessage = 'Failed to load transport options';
         isLoading = false;
+        isLoadingMore = false;
       });
     }
+  }
+
+  void loadMoreTransportOptions() {
+    if (isLoadingMore || !hasMore) return;
+
+    setState(() {
+      isLoadingMore = true;
+
+      currentOffset = (currentOffset + pageSize).clamp(
+        0,
+        filteredAndSortedOptions.length,
+      );
+
+      isLoadingMore = false;
+    });
   }
 
   Future<void> _changeSearchDate() async {
@@ -150,6 +231,7 @@ class _TransportSearchPage extends State<TransportSearchPage> {
     setState(() {
       searchDate = newSearchDate;
       options = [];
+      currentOffset = 0;
       isLoading = true;
       errorMessage = null;
     });
@@ -161,11 +243,16 @@ class _TransportSearchPage extends State<TransportSearchPage> {
         searchDate: newSearchDate,
       );
 
+      final filteredOptions = loadedOptions
+          .where(_matchesTransportType)
+          .toList();
+
       if (!mounted) return;
 
-      if (loadedOptions.isEmpty) {
+      if (filteredOptions.isEmpty) {
         setState(() {
           options = [];
+          currentOffset = 0;
           isLoading = false;
         });
 
@@ -182,14 +269,21 @@ class _TransportSearchPage extends State<TransportSearchPage> {
       widget.trip['end_date'] = newEndDate;
 
       setState(() {
-        options = loadedOptions;
+        options = filteredOptions;
+
+        currentOffset = filteredOptions.length > pageSize
+            ? pageSize
+            : filteredOptions.length;
+
         isLoading = false;
+        isLoadingMore = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
         options = [];
+        currentOffset = 0;
         isLoading = false;
         errorMessage = 'Failed to load transport options';
       });
@@ -419,6 +513,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
     return result;
   }
 
+  List<Transport> get visibleOptions {
+    final end = currentOffset.clamp(0, filteredAndSortedOptions.length);
+
+    return filteredAndSortedOptions.take(end).toList();
+  }
+
   void _resetFilters() {
     setState(() {
       directOnly = false;
@@ -430,6 +530,10 @@ class _TransportSearchPage extends State<TransportSearchPage> {
       selectedArrivalAirport = null;
 
       departureTimeRanges.clear();
+
+      currentOffset = filteredAndSortedOptions.length > pageSize
+          ? pageSize
+          : filteredAndSortedOptions.length;
     });
   }
 
@@ -539,7 +643,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
                       const SizedBox(height: 8),
 
-                      // DIRECT FLIGHTS
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
@@ -558,7 +661,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
                       const SizedBox(height: 8),
 
-                      // MAX STOPS
                       const Text(
                         'Maximum stops',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -600,7 +702,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
                       const SizedBox(height: 12),
 
-                      // MAX PRICE
                       const Text(
                         'Maximum price',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -646,7 +747,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
                       const SizedBox(height: 12),
 
-                      // MAX DURATION
                       const Text(
                         'Maximum flight duration',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -696,7 +796,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
 
                       const SizedBox(height: 12),
 
-                      // DEPARTURE TIME
                       const Text(
                         'Departure time',
                         style: TextStyle(fontWeight: FontWeight.w600),
@@ -747,7 +846,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                           ),
                         ),
 
-                      // AIRPORTS
                       if (departureAirports.isNotEmpty ||
                           arrivalAirports.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -830,6 +928,13 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                               departureTimeRanges
                                 ..clear()
                                 ..addAll(localDepartureTimeRanges);
+
+                              final filteredCount =
+                                  filteredAndSortedOptions.length;
+
+                              currentOffset = filteredCount > pageSize
+                                  ? pageSize
+                                  : filteredCount;
                             });
 
                             Navigator.of(context).pop();
@@ -878,6 +983,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                   onTap: () {
                     setState(() {
                       selectedSort = sort;
+
+                      final filteredCount = filteredAndSortedOptions.length;
+
+                      currentOffset = filteredCount > pageSize
+                          ? pageSize
+                          : filteredCount;
                     });
 
                     Navigator.pop(sheetContext);
@@ -895,6 +1006,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                   onChanged: (value) {
                     setState(() {
                       sortAscending = true;
+
+                      final filteredCount = filteredAndSortedOptions.length;
+
+                      currentOffset = filteredCount > pageSize
+                          ? pageSize
+                          : filteredCount;
                     });
 
                     Navigator.pop(sheetContext);
@@ -903,6 +1020,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                 onTap: () {
                   setState(() {
                     sortAscending = true;
+
+                    final filteredCount = filteredAndSortedOptions.length;
+
+                    currentOffset = filteredCount > pageSize
+                        ? pageSize
+                        : filteredCount;
                   });
 
                   Navigator.pop(sheetContext);
@@ -917,6 +1040,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                   onChanged: (value) {
                     setState(() {
                       sortAscending = false;
+
+                      final filteredCount = filteredAndSortedOptions.length;
+
+                      currentOffset = filteredCount > pageSize
+                          ? pageSize
+                          : filteredCount;
                     });
 
                     Navigator.pop(sheetContext);
@@ -925,6 +1054,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                 onTap: () {
                   setState(() {
                     sortAscending = false;
+
+                    final filteredCount = filteredAndSortedOptions.length;
+
+                    currentOffset = filteredCount > pageSize
+                        ? pageSize
+                        : filteredCount;
                   });
 
                   Navigator.pop(sheetContext);
@@ -951,10 +1086,20 @@ class _TransportSearchPage extends State<TransportSearchPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          isReturnTransport ? 'Return Transport' : 'Transport Options',
+          widget.transportType != null
+              ? '${widget.transportType} Tickets'
+              : isReturnTransport
+              ? 'Return Transport'
+              : 'Transport Options',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
+      floatingActionButton: _showScrollToTop
+          ? FloatingActionButton(
+              onPressed: _scrollToTop,
+              child: const Icon(Icons.keyboard_arrow_up),
+            )
+          : null,
       body: _buildBody(from, to),
     );
   }
@@ -977,7 +1122,8 @@ class _TransportSearchPage extends State<TransportSearchPage> {
       );
     }
 
-    final displayedOptions = filteredAndSortedOptions;
+    final filteredOptions = filteredAndSortedOptions;
+    final displayedOptions = visibleOptions;
 
     final hasActiveFilters =
         directOnly ||
@@ -989,6 +1135,7 @@ class _TransportSearchPage extends State<TransportSearchPage> {
         departureTimeRanges.isNotEmpty;
 
     return SingleChildScrollView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1037,9 +1184,14 @@ class _TransportSearchPage extends State<TransportSearchPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${displayedOptions.length} '
-                '${displayedOptions.length == 1 ? 'option' : 'options'}',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                hasActiveFilters
+                    ? '${filteredOptions.length} of ${options.length} tickets found'
+                    : '${filteredOptions.length} tickets found',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
 
               if (hasActiveFilters)
@@ -1058,10 +1210,12 @@ class _TransportSearchPage extends State<TransportSearchPage> {
               child: Center(
                 child: Column(
                   children: [
-                    const Text(
-                      'No transport tickets were found for the selected date.',
+                    Text(
+                      widget.transportType != null
+                          ? 'No ${widget.transportType!.toLowerCase()} tickets were found for the selected date.'
+                          : 'No transport tickets were found for the selected date.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -1078,7 +1232,7 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                 ),
               ),
             )
-          else if (displayedOptions.isEmpty)
+          else if (filteredOptions.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
               child: Center(
@@ -1091,6 +1245,23 @@ class _TransportSearchPage extends State<TransportSearchPage> {
             ),
 
           ...displayedOptions.map((option) => _buildTransportCard(option)),
+
+          if (hasMore && displayedOptions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: isLoadingMore
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: CircularProgressIndicator(),
+                    )
+                  : ElevatedButton(
+                      onPressed: loadMoreTransportOptions,
+                      child: const Text('View more'),
+                    ),
+            ),
+          ],
+
+          const SizedBox(height: 80),
         ],
       ),
     );

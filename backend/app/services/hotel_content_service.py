@@ -145,9 +145,6 @@ class HotelContentService:
             )
         )
 
-        print("HOTEL CODE:", data.get("code"))
-        print("HOTEL ADDRESS RAW:", data.get("address"))
-
         hotel.address = (
             HotelContentService._get_address(
                 data

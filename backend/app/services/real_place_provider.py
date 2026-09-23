@@ -213,11 +213,6 @@ class RealPlaceProvider(PlaceProvider):
                 )
 
                 if place:
-                    print(
-                        f"DEBUG PLACE: "
-                        f"name={place['name']} "
-                        f"category={place['category']}"
-                    )
 
                     options.append(place)
 
@@ -281,11 +276,6 @@ class RealPlaceProvider(PlaceProvider):
             built_count = 0
             skipped_count = 0
 
-            print(
-                f"PLACES CATEGORY: {place_category} "
-                f"FEATURES: {len(features)}"
-            )
-
             for feature in features:
                 place = self._build_place(
                     feature,
@@ -310,13 +300,6 @@ class RealPlaceProvider(PlaceProvider):
 
                 options.append(place)
 
-            print(
-                f"PLACES CATEGORY: {place_category} "
-                f"BUILT: {built_count} "
-                f"SKIPPED: {skipped_count} "
-                f"TOTAL OPTIONS: {len(options)}"
-            )
-
         options.sort(
             key=lambda place: place.get(
                 "_importance_score",
@@ -328,16 +311,6 @@ class RealPlaceProvider(PlaceProvider):
         options = self._deduplicate_and_adjust_subfeatures(
             options
         )
-
-        for place in options[:30]:
-            print(
-                "RANKED PLACE:",
-                place["name"],
-                "|",
-                place["category"],
-                "| SCORE:",
-                place.get("_importance_score"),
-            )
 
         for place in options:
             place.pop(
@@ -791,15 +764,6 @@ class RealPlaceProvider(PlaceProvider):
             self._calculate_importance_score(
                 properties,
             )
-        )
-
-        print(
-            "PLACE GEO:",
-            properties.get("name"),
-            "|",
-            properties.get("categories", []),
-            "| SCORE:",
-            importance_score,
         )
 
         geo_categories = [

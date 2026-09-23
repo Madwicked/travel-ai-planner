@@ -47,6 +47,9 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
   final TextEditingController nameSearchController = TextEditingController();
 
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollToTop = false;
+
   String nameSearch = '';
   String selectedSort = 'Significance';
 
@@ -161,6 +164,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   void initState() {
     super.initState();
 
+    _scrollController.addListener(_handleScroll);
+
     nameSearchController.addListener(() {
       setState(() {
         nameSearch = nameSearchController.text.trim().toLowerCase();
@@ -170,8 +175,33 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     loadPlaceOptions();
   }
 
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+
+    final shouldShow = _scrollController.offset > 500;
+
+    if (shouldShow != _showScrollToTop) {
+      setState(() {
+        _showScrollToTop = shouldShow;
+      });
+    }
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+
     nameSearchController.dispose();
 
     super.dispose();
@@ -616,6 +646,12 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
         ),
       ),
       body: _buildBody(destination),
+      floatingActionButton: _showScrollToTop
+          ? FloatingActionButton(
+              onPressed: _scrollToTop,
+              child: const Icon(Icons.keyboard_arrow_up),
+            )
+          : null,
       bottomNavigationBar: isLoading
           ? null
           : SafeArea(
@@ -657,6 +693,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     }
 
     return SingleChildScrollView(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

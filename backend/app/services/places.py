@@ -506,20 +506,6 @@ def generate_place_options(
         search=search,
         search_type=search_type,
     )
-    print(
-        "PLACES CACHE KEY:",
-        {
-            "trip_id": trip.id,
-            "latitude": latitude,
-            "longitude": longitude,
-            "radius_km": radius_km,
-            "country_place_id": country_place_id,
-            "search": search,
-            "search_type": search_type,
-            "category": category,
-            "cache_type": cache_type,
-        }
-    )
 
     cache = cache_service.get(
         db=db,
@@ -568,27 +554,6 @@ def generate_place_options(
     # ---------------------------------------------------------
     # Category filtering happens AFTER cache loading.
     # ---------------------------------------------------------
-    print(
-        "BEFORE CATEGORY FILTER:",
-        {
-            "total": len(options),
-            "categories": {
-                category_name: sum(
-                    1
-                    for option in options
-                    if option.get("category") == category_name
-                )
-                for category_name in [
-                    "Attractions",
-                    "Nature",
-                    "Entertainment",
-                    "Food",
-                    "Shopping",
-                ]
-            },
-            "requested_category": category,
-        },
-    )
 
     options = _filter_by_category(
         options,

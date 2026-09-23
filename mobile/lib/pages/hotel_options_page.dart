@@ -23,7 +23,17 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
   final TextEditingController searchController = TextEditingController();
 
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollToTop = false;
+
   HotelFilterState filters = const HotelFilterState();
+
+  int currentOffset = 0;
+  int pageSize = 50;
+
+  bool isLoadingMore = false;
+
+  bool get hasMore => currentOffset < filteredOptions.length;
 
   Future<void> loadHotelOptions() async {
     final tripId = widget.trip['id'];
@@ -35,7 +45,13 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
       setState(() {
         options = loadedOptions;
+
+        currentOffset = loadedOptions.length > pageSize
+            ? pageSize
+            : loadedOptions.length;
+
         isLoading = false;
+        isLoadingMore = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -43,8 +59,24 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
       setState(() {
         errorMessage = 'Failed to load hotel options';
         isLoading = false;
+        isLoadingMore = false;
       });
     }
+  }
+
+  void loadMoreHotelOptions() {
+    if (isLoadingMore || !hasMore) return;
+
+    setState(() {
+      isLoadingMore = true;
+
+      currentOffset = (currentOffset + pageSize).clamp(
+        0,
+        filteredOptions.length,
+      );
+
+      isLoadingMore = false;
+    });
   }
 
   Future<void> selectHotelRate(Hotel hotel) async {
@@ -75,11 +107,38 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
   @override
   void initState() {
     super.initState();
+
+    _scrollController.addListener(_handleScroll);
+
     loadHotelOptions();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+
+    final shouldShow = _scrollController.offset > 500;
+
+    if (shouldShow != _showScrollToTop) {
+      setState(() {
+        _showScrollToTop = shouldShow;
+      });
+    }
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     searchController.dispose();
     super.dispose();
   }
@@ -222,6 +281,12 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
     return filtered;
   }
 
+  List<Hotel> get visibleOptions {
+    final end = currentOffset.clamp(0, filteredOptions.length);
+
+    return filteredOptions.take(end).toList();
+  }
+
   bool get hasActiveFilters {
     return searchController.text.isNotEmpty || filters.hasActiveFilters;
   }
@@ -231,7 +296,12 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
     setState(() {
       filters = const HotelFilterState();
+      currentOffset = 0;
+      isLoading = true;
+      errorMessage = null;
     });
+
+    loadHotelOptions();
   }
 
   Future<void> showFilters() async {
@@ -274,6 +344,12 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
         ],
       ),
       body: _buildBody(destination),
+      floatingActionButton: _showScrollToTop
+          ? FloatingActionButton(
+              onPressed: _scrollToTop,
+              child: const Icon(Icons.keyboard_arrow_up),
+            )
+          : null,
     );
   }
 
@@ -296,8 +372,10 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
     }
 
     final filtered = filteredOptions;
+    final visible = visibleOptions;
 
     return SingleChildScrollView(
+      controller: _scrollController,
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,6 +460,19 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
             ),
           ],
 
+          Text(
+            hasActiveFilters
+                ? '${filtered.length} of ${options.length} hotels found'
+                : '${filtered.length} hotels found',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
           if (filtered.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
@@ -394,7 +485,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
               ),
             )
           else
-            ...filtered.map(
+            ...visible.map(
               (option) => Card(
                 margin: const EdgeInsets.only(bottom: 16),
                 elevation: 2,
@@ -632,6 +723,23 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
                 ),
               ),
             ),
+
+          if (hasMore && visible.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Center(
+              child: isLoadingMore
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: CircularProgressIndicator(),
+                    )
+                  : ElevatedButton(
+                      onPressed: loadMoreHotelOptions,
+                      child: const Text('View more'),
+                    ),
+            ),
+          ],
+
+          const SizedBox(height: 80),
         ],
       ),
     );

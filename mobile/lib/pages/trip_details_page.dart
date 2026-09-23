@@ -5,7 +5,7 @@ import 'hotel_options_page.dart';
 import 'itinerary_page.dart';
 import 'place_options_page.dart';
 import 'transport_details_page.dart';
-import 'transport_search_page.dart';
+import 'transport_type_selection_page.dart';
 import '../models/hotel.dart';
 import '../models/place.dart';
 import '../models/transport.dart';
@@ -125,7 +125,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => TransportSearchPage(trip: trip)),
+      MaterialPageRoute(
+        builder: (context) => TransportTypeSelectionPage(trip: trip),
+      ),
     );
 
     if (result == null || !context.mounted) {
@@ -158,7 +160,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => TransportSearchPage(trip: trip)),
+      MaterialPageRoute(
+        builder: (context) => TransportTypeSelectionPage(trip: trip),
+      ),
     );
 
     if (result == null || !context.mounted) {

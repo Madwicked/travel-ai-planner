@@ -80,64 +80,6 @@ class RealFlightProvider(TransportProvider):
                 f"FlightAPI error {error.code}: {body}"
             )
 
-    # def _request(
-    #         self,
-    #         departure_airport,
-    #         arrival_airport,
-    #         departure_date,
-    # ):
-    #     url = (
-    #         f"{self.BASE_URL}/onewaytrip/"
-    #         f"{self.api_key}/"
-    #         f"{departure_airport}/"
-    #         f"{arrival_airport}/"
-    #         f"{departure_date.isoformat()}/"
-    #         f"1/0/0/Economy/EUR"
-    #     )
-    #
-    #     safe_url = (
-    #         f"{self.BASE_URL}/onewaytrip/"
-    #         f"***API_KEY***/"
-    #         f"{departure_airport}/"
-    #         f"{arrival_airport}/"
-    #         f"{departure_date.isoformat()}/"
-    #         f"1/0/0/Economy/EUR"
-    #     )
-    #
-    #     try:
-    #         with urllib.request.urlopen(
-    #                 url,
-    #                 timeout=30,
-    #         ) as response:
-    #             raw_data = response.read().decode("utf-8")
-    #
-    #             print("FLIGHTAPI HTTP STATUS:", response.status)
-    #             print("FLIGHTAPI RESPONSE:")
-    #             print(raw_data[:5000])
-    #             print("=" * 80)
-    #             print()
-    #
-    #             return json.loads(raw_data)
-    #
-    #     except HTTPError as error:
-    #         body = error.read().decode("utf-8")
-    #
-    #         print()
-    #         print("=" * 80)
-    #         print("FLIGHTAPI HTTP ERROR")
-    #         print("STATUS:", error.code)
-    #         print("URL:", safe_url)
-    #         print("RESPONSE:")
-    #         print(body[:5000])
-    #         print("=" * 80)
-    #         print()
-    #
-    #         raise ValueError(
-    #             f"FlightAPI error {error.code}: {body}"
-    #         ) from error
-    #
-
-
     def _build_maps(self, data):
         places = {
             place["id"]: place
