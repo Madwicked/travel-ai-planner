@@ -58,12 +58,6 @@ class TransportTypeSelectionPage extends StatelessWidget {
               type: 'Bus',
               icon: Icons.directions_bus,
             ),
-
-            _buildTransportTypeCard(
-              context: context,
-              type: 'Transfer',
-              icon: Icons.directions_car,
-            ),
           ],
         ),
       ),

@@ -816,8 +816,11 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            TransportDetailsPage(transport: transport),
+                        builder: (context) => TransportDetailsPage(
+                          trip: widget.trip,
+                          transport: transport,
+                          hasSelectedHotel: selectedHotel != null,
+                        ),
                       ),
                     );
                   },
@@ -852,8 +855,11 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            TransportDetailsPage(transport: transport),
+                        builder: (context) => TransportDetailsPage(
+                          trip: widget.trip,
+                          transport: transport,
+                          hasSelectedHotel: selectedHotel != null,
+                        ),
                       ),
                     );
                   },

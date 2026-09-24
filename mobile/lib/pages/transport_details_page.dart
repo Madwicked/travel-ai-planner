@@ -1,11 +1,32 @@
 import 'package:flutter/material.dart';
 
 import '../models/transport.dart';
+import 'transfer_selection_page.dart';
 
-class TransportDetailsPage extends StatelessWidget {
+class TransportDetailsPage extends StatefulWidget {
+  final Map<String, dynamic> trip;
   final Transport transport;
+  final bool hasSelectedHotel;
 
-  const TransportDetailsPage({super.key, required this.transport});
+  const TransportDetailsPage({
+    super.key,
+    required this.trip,
+    required this.transport,
+    this.hasSelectedHotel = false,
+  });
+
+  @override
+  State<TransportDetailsPage> createState() => _TransportDetailsPageState();
+}
+
+class _TransportDetailsPageState extends State<TransportDetailsPage> {
+  bool _flightDetailsExpanded = true;
+
+  Transport get transport => widget.transport;
+
+  bool get hasSelectedTicket => transport.id != null;
+
+  bool get canAddTransfer => hasSelectedTicket && widget.hasSelectedHotel;
 
   IconData getTransportIcon(String type) {
     if (type.startsWith('Flight')) {
@@ -324,41 +345,111 @@ class TransportDetailsPage extends StatelessWidget {
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Trip details',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () {
+              setState(() {
+                _flightDetailsExpanded = !_flightDetailsExpanded;
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Trip details',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    _flightDetailsExpanded
+                        ? Icons.expand_less
+                        : Icons.expand_more,
+                    color: Colors.grey.shade700,
+                  ),
+                ],
+              ),
             ),
-
-            const SizedBox(height: 12),
-
-            _buildInfoRow('Transport', transport.type),
-
-            _buildInfoRow('Total duration', transport.duration),
-
-            _buildInfoRow('Stops', transport.stops.toString()),
-
-            _buildInfoRow(
-              'Departure',
-              '${transport.departureDate} '
-                  '${transport.departureTime}',
+          ),
+          if (_flightDetailsExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInfoRow('Transport', transport.type),
+                  _buildInfoRow('Total duration', transport.duration),
+                  _buildInfoRow('Stops', transport.stops.toString()),
+                  _buildInfoRow(
+                    'Departure',
+                    '${transport.departureDate} '
+                        '${transport.departureTime}',
+                  ),
+                  _buildInfoRow(
+                    'Arrival',
+                    '${transport.arrivalDate} '
+                        '${transport.arrivalTime}',
+                  ),
+                  _buildInfoRow('From', transport.departureLocation),
+                  _buildInfoRow('To', transport.arrivalLocation),
+                ],
+              ),
             ),
+        ],
+      ),
+    );
+  }
 
-            _buildInfoRow(
-              'Arrival',
-              '${transport.arrivalDate} '
-                  '${transport.arrivalTime}',
-            ),
+  String _addTransferHint() {
+    if (!hasSelectedTicket && !widget.hasSelectedHotel) {
+      return 'Select a ticket and a hotel to add a transfer.';
+    }
 
-            _buildInfoRow('From', transport.departureLocation),
+    if (!hasSelectedTicket) {
+      return 'Select a ticket to add a transfer.';
+    }
 
-            _buildInfoRow('To', transport.arrivalLocation),
-          ],
+    return 'Select a hotel to add a transfer.';
+  }
+
+  void _onAddTransferPressed() {
+    if (!canAddTransfer) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_addTransferHint())));
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TransferSelectionPage(
+          trip: widget.trip,
+          parentTransport: transport,
         ),
+      ),
+    );
+  }
+
+  Widget _buildAddTransferButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _onAddTransferPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor:
+              canAddTransfer ? Colors.blue : Colors.blue.shade200,
+          foregroundColor: Colors.white,
+        ),
+        icon: const Icon(Icons.directions_car),
+        label: const Text('Add transfer'),
       ),
     );
   }
@@ -468,6 +559,11 @@ class TransportDetailsPage extends StatelessWidget {
             // GENERAL DETAILS
             // =========================
             _buildGeneralDetails(),
+
+            if (isFlight) ...[
+              const SizedBox(height: 12),
+              _buildAddTransferButton(),
+            ],
 
             const SizedBox(height: 20),
 
