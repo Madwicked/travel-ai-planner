@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/transport.dart';
+import '../services/transport_service.dart';
 import 'transfer_selection_page.dart';
 
 class TransportDetailsPage extends StatefulWidget {
@@ -20,7 +21,7 @@ class TransportDetailsPage extends StatefulWidget {
 }
 
 class _TransportDetailsPageState extends State<TransportDetailsPage> {
-  bool _flightDetailsExpanded = true;
+  bool _flightDetailsExpanded = false;
 
   Transport get transport => widget.transport;
 
@@ -158,9 +159,6 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
   }
 
   Widget _buildSegmentCard(TransportSegment segment, int index) {
-    final isFirst = index == 0;
-    final isLast = index == transport.segments.length - 1;
-
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 1,
@@ -223,12 +221,6 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
               time: segment.arrivalTime,
               isDeparture: false,
             ),
-
-            if (segment.carrierCodeType != null &&
-                segment.carrierCodeType!.isNotEmpty)
-              Padding(padding: const EdgeInsets.only(top: 14)),
-
-            if (!isFirst || !isLast) const SizedBox.shrink(),
           ],
         ),
       ),
@@ -237,7 +229,6 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
 
   Widget _buildLayoverCard(Map<String, dynamic> layover) {
     final location = layover['location']?.toString() ?? '';
-
     final duration = layover['duration']?.toString() ?? '';
 
     return Container(
@@ -345,64 +336,39 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
     return Card(
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InkWell(
-            onTap: () {
-              setState(() {
-                _flightDetailsExpanded = !_flightDetailsExpanded;
-              });
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Trip details',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _flightDetailsExpanded
-                        ? Icons.expand_less
-                        : Icons.expand_more,
-                    color: Colors.grey.shade700,
-                  ),
-                ],
-              ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Trip details',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
-          ),
-          if (_flightDetailsExpanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildInfoRow('Transport', transport.type),
-                  _buildInfoRow('Total duration', transport.duration),
-                  _buildInfoRow('Stops', transport.stops.toString()),
-                  _buildInfoRow(
-                    'Departure',
-                    '${transport.departureDate} '
-                        '${transport.departureTime}',
-                  ),
-                  _buildInfoRow(
-                    'Arrival',
-                    '${transport.arrivalDate} '
-                        '${transport.arrivalTime}',
-                  ),
-                  _buildInfoRow('From', transport.departureLocation),
-                  _buildInfoRow('To', transport.arrivalLocation),
-                ],
-              ),
+
+            const SizedBox(height: 12),
+
+            _buildInfoRow('Transport', transport.type),
+            _buildInfoRow('Total duration', transport.duration),
+            _buildInfoRow('Stops', transport.stops.toString()),
+
+            _buildInfoRow(
+              'Departure',
+              '${transport.departureDate} '
+                  '${transport.departureTime}',
             ),
-        ],
+
+            _buildInfoRow(
+              'Arrival',
+              '${transport.arrivalDate} '
+                  '${transport.arrivalTime}',
+            ),
+
+            _buildInfoRow('From', transport.departureLocation),
+
+            _buildInfoRow('To', transport.arrivalLocation),
+          ],
+        ),
       ),
     );
   }
@@ -421,9 +387,8 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
 
   void _onAddTransferPressed() {
     if (!canAddTransfer) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(_addTransferHint())));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_addTransferHint())));
       return;
     }
 
@@ -438,20 +403,84 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
     );
   }
 
-  Widget _buildAddTransferButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _onAddTransferPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor:
-              canAddTransfer ? Colors.blue : Colors.blue.shade200,
-          foregroundColor: Colors.white,
+  Widget _buildTransferCard() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.directions_car,
+                    color: Colors.blue,
+                    size: 24,
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                const Expanded(
+                  child: Text(
+                    'Transfer',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _onAddTransferPressed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: canAddTransfer
+                      ? Colors.blue
+                      : Colors.blue.shade200,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Add transfer'),
+              ),
+            ),
+          ],
         ),
-        icon: const Icon(Icons.directions_car),
-        label: const Text('Add transfer'),
       ),
     );
+  }
+
+  Future<void> _deleteTransport() async {
+    if (transport.id == null) {
+      return;
+    }
+
+    try {
+      await TransportService.deleteTransport(
+        tripId: widget.trip['id'],
+        transportId: transport.id!,
+      );
+
+      if (!mounted) return;
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete transport: $e')));
+    }
   }
 
   Widget _buildBookingButton(BuildContext context) {
@@ -492,125 +521,176 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // =========================
-            // HEADER
+            // FLIGHT CARD
             // =========================
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    getTransportIcon(transport.type),
-                    color: Colors.blue,
-                    size: 32,
-                  ),
-                ),
-
-                const SizedBox(width: 14),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        transport.type,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 6),
-
-                      Text(
-                        transport.duration,
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-
-                      if (isFlight) const SizedBox(height: 4),
-
-                      if (isFlight)
-                        Text(
-                          transport.stops == 0
-                              ? 'Direct flight'
-                              : '${transport.stops} '
-                                    '${transport.stops == 1 ? 'stop' : 'stops'}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  InkWell(
+                    onTap: isFlight
+                        ? () {
+                            setState(() {
+                              _flightDetailsExpanded = !_flightDetailsExpanded;
+                            });
+                          }
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              getTransportIcon(transport.type),
+                              color: Colors.blue,
+                              size: 32,
+                            ),
                           ),
-                        ),
-                    ],
+
+                          const SizedBox(width: 14),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  transport.type,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 6),
+
+                                Text(
+                                  transport.duration,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+
+                                if (isFlight) const SizedBox(height: 4),
+
+                                if (isFlight)
+                                  Text(
+                                    transport.stops == 0
+                                        ? 'Direct flight'
+                                        : '${transport.stops} '
+                                              '${transport.stops == 1 ? 'stop' : 'stops'}',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          if (isFlight)
+                            Icon(
+                              _flightDetailsExpanded
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              color: Colors.grey.shade700,
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ],
+
+                  if (!isFlight || _flightDetailsExpanded)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                      child: Column(
+                        children: [
+                          _buildGeneralDetails(),
+
+                          const SizedBox(height: 20),
+
+                          if (isFlight && transport.segments.isNotEmpty) ...[
+                            const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'Flight segments',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            ...transport.segments.asMap().entries.map(
+                              (entry) =>
+                                  _buildSegmentCard(entry.value, entry.key),
+                            ),
+
+                            if (transport.layovers.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Connections',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              ...transport.layovers.map(
+                                (layover) => _buildLayoverCard(layover),
+                              ),
+                            ],
+                          ],
+
+                          const SizedBox(height: 8),
+
+                          _buildPriceBlock(),
+
+                          const SizedBox(height: 20),
+
+                          _buildBookingButton(context),
+
+                          const SizedBox(height: 12),
+
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _deleteTransport,
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              label: Text(
+                                isFlight ? 'Delete flight' : 'Delete transport',
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
 
-            const SizedBox(height: 24),
-
-            // =========================
-            // GENERAL DETAILS
-            // =========================
-            _buildGeneralDetails(),
-
-            if (isFlight) ...[
-              const SizedBox(height: 12),
-              _buildAddTransferButton(),
-            ],
-
-            const SizedBox(height: 20),
-
-            // =========================
-            // FLIGHT SEGMENTS
-            // =========================
-            if (isFlight && transport.segments.isNotEmpty) ...[
-              const Text(
-                'Flight segments',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 12),
-
-              ...transport.segments.asMap().entries.map(
-                (entry) => _buildSegmentCard(entry.value, entry.key),
-              ),
-
-              if (transport.layovers.isNotEmpty) ...[
-                const SizedBox(height: 8),
-
-                const Text(
-                  'Connections',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-
-                const SizedBox(height: 12),
-
-                ...transport.layovers.map(
-                  (layover) => _buildLayoverCard(layover),
-                ),
-              ],
-            ],
-
-            const SizedBox(height: 8),
-
-            // =========================
-            // PRICE
-            // =========================
-            _buildPriceBlock(),
-
-            const SizedBox(height: 20),
-
-            // =========================
-            // BOOKING
-            // =========================
-            _buildBookingButton(context),
+            if (isFlight) ...[const SizedBox(height: 20), _buildTransferCard()],
 
             const SizedBox(height: 20),
           ],

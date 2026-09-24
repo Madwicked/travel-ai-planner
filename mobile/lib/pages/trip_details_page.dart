@@ -13,6 +13,7 @@ import '../services/api_service.dart';
 import '../services/hotel_service.dart';
 import '../services/place_service.dart';
 import '../services/transport_service.dart';
+import 'transfer_selection_page.dart';
 
 class TripDetailsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -26,6 +27,9 @@ class TripDetailsPage extends StatefulWidget {
 class _TripDetailsPageState extends State<TripDetailsPage> {
   List<Transport> selectedOutboundTransports = [];
   List<Transport> selectedReturnTransports = [];
+
+  String? outboundTransferChoice;
+  String? returnTransferChoice;
 
   Hotel? selectedHotel;
 
@@ -88,6 +92,19 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             .where((transport) => transport.direction == 'return')
             .toList();
 
+        // If a real transfer already exists, remember it as selected.
+        if (selectedOutboundTransports.any(
+          (transport) => transport.type.startsWith('Transfer'),
+        )) {
+          outboundTransferChoice = 'Transfer';
+        }
+
+        if (selectedReturnTransports.any(
+          (transport) => transport.type.startsWith('Transfer'),
+        )) {
+          returnTransferChoice = 'Transfer';
+        }
+
         isLoadingTransport = false;
       });
     } catch (e) {
@@ -137,7 +154,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final transport = result as Transport;
 
     for (final oldTransport in selectedOutboundTransports) {
-      if (oldTransport.type != 'Transfer') {
+      if (!oldTransport.type.startsWith('Transfer') &&
+          oldTransport.id != null) {
         await TransportService.deleteTransport(
           tripId: widget.trip['id'],
           transportId: oldTransport.id!,
@@ -172,7 +190,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     final transport = result as Transport;
 
     for (final oldTransport in selectedReturnTransports) {
-      if (oldTransport.type != 'Transfer') {
+      if (!oldTransport.type.startsWith('Transfer') &&
+          oldTransport.id != null) {
         await TransportService.deleteTransport(
           tripId: widget.trip['id'],
           transportId: oldTransport.id!,
@@ -188,6 +207,88 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     await loadSelectedTransports();
     await loadBudget();
+  }
+
+  Future<void> _addTransfer({required Transport parentTransport}) async {
+    if (selectedHotel == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a hotel before adding a transfer.'),
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TransferSelectionPage(
+          trip: widget.trip,
+          parentTransport: parentTransport,
+        ),
+      ),
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    String? choice;
+
+    if (result == 'transfer') {
+      choice = 'Transfer';
+    } else if (result == 'route') {
+      choice = 'Build a route';
+    }
+
+    if (choice == null) {
+      return;
+    }
+
+    setState(() {
+      if (parentTransport.direction == 'return') {
+        returnTransferChoice = choice;
+      } else {
+        outboundTransferChoice = choice;
+      }
+    });
+  }
+
+  Future<void> _deleteTransfer(Transport transfer) async {
+    if (transfer.id == null) {
+      return;
+    }
+
+    try {
+      await TransportService.deleteTransport(
+        tripId: widget.trip['id'],
+        transportId: transfer.id!,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        if (transfer.direction == 'return') {
+          selectedReturnTransports.removeWhere(
+            (item) => item.id == transfer.id,
+          );
+          returnTransferChoice = null;
+        } else {
+          selectedOutboundTransports.removeWhere(
+            (item) => item.id == transfer.id,
+          );
+          outboundTransferChoice = null;
+        }
+      });
+
+      await loadBudget();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete transfer: $e')));
+    }
   }
 
   // =========================
@@ -218,8 +319,11 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     Transport transport, {
     required VoidCallback onChange,
     VoidCallback? onTap,
+    String? transferChoice,
+    VoidCallback? onAddTransfer,
   }) {
     final bool isReturn = transport.direction == 'return';
+    final bool isTransfer = transport.type.startsWith('Transfer');
 
     final String departureCity = isReturn
         ? widget.trip['destination']
@@ -350,9 +454,50 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
                             const SizedBox(height: 8),
 
-                            OutlinedButton(
-                              onPressed: onChange,
-                              child: const Text('Change'),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: isTransfer ? null : onChange,
+                                  child: const Text('Change'),
+                                ),
+
+                                if (!isTransfer && onAddTransfer != null) ...[
+                                  const SizedBox(height: 6),
+
+                                  OutlinedButton(
+                                    onPressed: onAddTransfer,
+                                    style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(48, 42),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 8,
+                                      ),
+                                      side: BorderSide(
+                                        color: transferChoice != null
+                                            ? Colors.blue
+                                            : Colors.grey.shade400,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      transferChoice == 'Transfer'
+                                          ? Icons.directions_car
+                                          : transferChoice == 'Build a route'
+                                          ? Icons.alt_route
+                                          : Icons.directions_car_outlined,
+                                      color:
+                                          transferChoice == 'Transfer' ||
+                                              transferChoice == 'Build a route'
+                                          ? Colors.blue
+                                          : Colors.grey.shade600,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
@@ -387,14 +532,32 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         color: Colors.grey.shade600,
                       ),
                     ),
+
                     if (transport.segments.length > 1) ...[
                       const SizedBox(height: 8),
-
                       Text(
                         'Connections: ${transport.segments.take(transport.segments.length - 1).map((segment) => segment.arrivalLocation).join(' → ')}',
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+
+                    if (isTransfer) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _deleteTransfer(transport),
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          label: const Text(
+                            'Delete transfer',
+                            style: TextStyle(color: Colors.red),
+                          ),
                         ),
                       ),
                     ],
@@ -449,7 +612,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
 
     final hotel = result as Hotel;
-
     final tripId = widget.trip['id'];
 
     try {
@@ -460,10 +622,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         );
       }
 
-      final savedHotel = await HotelService.createHotel(
-        tripId: tripId,
-        hotel: hotel,
-      );
+      await HotelService.createHotel(tripId: tripId, hotel: hotel);
 
       if (!context.mounted) return;
 
@@ -558,8 +717,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
               if (userAmount != null && userCurrency != null)
                 Text(
-                  '(${amount.toStringAsFixed(2)} '
-                  '$currency)',
+                  '(${amount.toStringAsFixed(2)} $currency)',
                   style: TextStyle(
                     fontSize: isTotal ? 12 : 11,
                     color: Colors.grey.shade600,
@@ -567,8 +725,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 )
               else
                 Text(
-                  '${amount.toStringAsFixed(2)} '
-                  '$currency',
+                  '${amount.toStringAsFixed(2)} $currency',
                   style: TextStyle(
                     fontSize: isTotal ? 16 : 14,
                     fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
@@ -619,7 +776,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
 
     final places = List<Place>.from(result);
-
     final tripId = widget.trip['id'];
 
     try {
@@ -700,10 +856,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  // =========================
-  // PLACE CARD
-  // =========================
-
   Widget buildPlaceCard(Place place) {
     return Card(
       margin: EdgeInsets.zero,
@@ -768,6 +920,22 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   Widget build(BuildContext context) {
     final destination = widget.trip['destination'];
 
+    final outboundMainTransport = selectedOutboundTransports
+        .where((transport) => !transport.type.startsWith('Transfer'))
+        .toList();
+
+    final outboundTransfers = selectedOutboundTransports
+        .where((transport) => transport.type.startsWith('Transfer'))
+        .toList();
+
+    final returnMainTransport = selectedReturnTransports
+        .where((transport) => !transport.type.startsWith('Transfer'))
+        .toList();
+
+    final returnTransfers = selectedReturnTransports
+        .where((transport) => transport.type.startsWith('Transfer'))
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -807,13 +975,15 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             if (isLoadingTransport)
               const Center(child: CircularProgressIndicator())
-            else if (selectedOutboundTransports.isNotEmpty)
-              ...selectedOutboundTransports.map(
+            else if (outboundMainTransport.isNotEmpty)
+              ...outboundMainTransport.map(
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseOutboundTransport,
-                  onTap: () {
-                    Navigator.push(
+                  transferChoice: outboundTransferChoice,
+                  onAddTransfer: () => _addTransfer(parentTransport: transport),
+                  onTap: () async {
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => TransportDetailsPage(
@@ -823,6 +993,11 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         ),
                       ),
                     );
+
+                    if (result == true && mounted) {
+                      await loadSelectedTransports();
+                      await loadBudget();
+                    }
                   },
                 ),
               )
@@ -831,6 +1006,20 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 onPressed: chooseOutboundTransport,
                 child: const Text('Choose outbound transport'),
               ),
+
+            if (outboundTransfers.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ...outboundTransfers.map(
+                (transfer) => buildTransportCard(
+                  transfer,
+                  onChange: () {},
+                  onTap: () {},
+                  transferChoice: transfer.direction == 'return'
+                      ? returnTransferChoice
+                      : outboundTransferChoice,
+                ),
+              ),
+            ],
 
             const SizedBox(height: 24),
 
@@ -846,13 +1035,15 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             if (isLoadingTransport)
               const Center(child: CircularProgressIndicator())
-            else if (selectedReturnTransports.isNotEmpty)
-              ...selectedReturnTransports.map(
+            else if (returnMainTransport.isNotEmpty)
+              ...returnMainTransport.map(
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseReturnTransport,
-                  onTap: () {
-                    Navigator.push(
+                  transferChoice: returnTransferChoice,
+                  onAddTransfer: () => _addTransfer(parentTransport: transport),
+                  onTap: () async {
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => TransportDetailsPage(
@@ -862,6 +1053,11 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         ),
                       ),
                     );
+
+                    if (result == true && mounted) {
+                      await loadSelectedTransports();
+                      await loadBudget();
+                    }
                   },
                 ),
               )
@@ -870,6 +1066,20 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 onPressed: chooseReturnTransport,
                 child: const Text('Choose return transport'),
               ),
+
+            if (returnTransfers.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              ...returnTransfers.map(
+                (transfer) => buildTransportCard(
+                  transfer,
+                  onChange: () {},
+                  onTap: () {},
+                  transferChoice: transfer.direction == 'return'
+                      ? returnTransferChoice
+                      : outboundTransferChoice,
+                ),
+              ),
+            ],
 
             const SizedBox(height: 24),
 
@@ -1026,8 +1236,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                   color: Colors.grey.shade600,
                                 ),
                               ),
+
                               if (selectedHotel!.rateOptions.isNotEmpty) ...[
                                 const SizedBox(height: 10),
+
                                 Text(
                                   selectedHotel!.rateOptions.first.roomName,
                                   maxLines: 2,
@@ -1037,7 +1249,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+
                                 const SizedBox(height: 4),
+
                                 if (selectedHotel!
                                     .rateOptions
                                     .first
@@ -1050,7 +1264,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                       color: Colors.grey.shade700,
                                     ),
                                   ),
+
                                 const SizedBox(height: 4),
+
                                 Row(
                                   children: [
                                     Icon(
@@ -1331,9 +1547,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             const SizedBox(height: 16),
 
-            // =========================
-            // ITINERARY
-            // =========================
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
