@@ -37,6 +37,17 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   String foodPreference = 'Mixed';
 
+  String _formatDate(String date) {
+    final parsedDate = DateTime.tryParse(date);
+
+    if (parsedDate == null) return date;
+
+    final day = parsedDate.day.toString().padLeft(2, '0');
+    final month = parsedDate.month.toString().padLeft(2, '0');
+
+    return '$day.$month.${parsedDate.year}';
+  }
+
   final List<String> foodPreferences = [
     'Fast food',
     'Budget restaurant',
@@ -92,7 +103,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             .where((transport) => transport.direction == 'return')
             .toList();
 
-        // If a real transfer already exists, remember it as selected.
         if (selectedOutboundTransports.any(
           (transport) => transport.type.startsWith('Transfer'),
         )) {
@@ -225,6 +235,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         builder: (context) => TransferSelectionPage(
           trip: widget.trip,
           parentTransport: parentTransport,
+          selectedHotel: selectedHotel!,
         ),
       ),
     );
@@ -233,25 +244,102 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       return;
     }
 
-    String? choice;
-
-    if (result == 'transfer') {
-      choice = 'Transfer';
-    } else if (result == 'route') {
-      choice = 'Build a route';
-    }
-
-    if (choice == null) {
+    if (result is! Map) {
       return;
     }
 
-    setState(() {
-      if (parentTransport.direction == 'return') {
-        returnTransferChoice = choice;
-      } else {
-        outboundTransferChoice = choice;
+    final resultType = result['type']?.toString();
+
+    if (resultType != 'transfer') {
+      return;
+    }
+
+    final option = Map<String, dynamic>.from(result['option'] as Map);
+
+    final price = (option['price'] as num?)?.toDouble();
+
+    if (price == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transfer price is not available.')),
+      );
+      return;
+    }
+
+    final currency = option['currency']?.toString() ?? 'EUR';
+
+    final vehicleName = option['vehicle_name']?.toString() ?? 'Transfer';
+
+    final categoryName = option['category_name']?.toString() ?? '';
+
+    final transferType = option['transfer_type']?.toString() ?? '';
+
+    final transferName = [
+      vehicleName,
+      categoryName,
+      transferType,
+    ].where((value) => value.isNotEmpty).join(' · ');
+
+    final transfer = Transport(
+      direction: parentTransport.direction,
+      type: transferName.isEmpty ? 'Transfer' : 'Transfer · $transferName',
+      price: price,
+      currency: currency,
+      destinationPrice: price,
+      destinationCurrency: currency,
+      userPrice: price,
+      userCurrency: currency,
+      duration: 'Transfer',
+      departureDate: parentTransport.departureDate,
+      departureTime: parentTransport.departureTime,
+      departureLocation: parentTransport.direction == 'return'
+          ? selectedHotel!.name
+          : parentTransport.departureLocation,
+      arrivalDate: parentTransport.arrivalDate,
+      arrivalTime: parentTransport.arrivalTime,
+      arrivalLocation: parentTransport.direction == 'return'
+          ? parentTransport.arrivalLocation
+          : selectedHotel!.name,
+    );
+
+    try {
+      final existingTransfers = parentTransport.direction == 'return'
+          ? selectedReturnTransports
+                .where((transport) => transport.type.startsWith('Transfer'))
+                .toList()
+          : selectedOutboundTransports
+                .where((transport) => transport.type.startsWith('Transfer'))
+                .toList();
+
+      for (final existingTransfer in existingTransfers) {
+        if (existingTransfer.id != null) {
+          await TransportService.deleteTransport(
+            tripId: widget.trip['id'],
+            transportId: existingTransfer.id!,
+          );
+        }
       }
-    });
+
+      await TransportService.createTransport(
+        tripId: widget.trip['id'],
+        transport: transfer,
+      );
+
+      if (!mounted) return;
+
+      if (parentTransport.direction == 'return') {
+        returnTransferChoice = 'Transfer';
+      } else {
+        outboundTransferChoice = 'Transfer';
+      }
+
+      await loadSelectedTransports();
+      await loadBudget();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to save transfer: $e')));
+    }
   }
 
   Future<void> _deleteTransfer(Transport transfer) async {
@@ -377,9 +465,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   size: 28,
                 ),
               ),
-
               const SizedBox(width: 16),
-
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,9 +485,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-
                               const SizedBox(height: 2),
-
                               const Text(
                                 '↓',
                                 style: TextStyle(
@@ -409,9 +493,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-
                               const SizedBox(height: 2),
-
                               Text(
                                 arrivalLabel,
                                 softWrap: true,
@@ -423,9 +505,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                             ],
                           ),
                         ),
-
                         const SizedBox(width: 12),
-
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           mainAxisSize: MainAxisSize.min,
@@ -439,9 +519,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-
                             const SizedBox(height: 2),
-
                             Text(
                               '${transport.destinationPrice} '
                               '${transport.destinationCurrency}',
@@ -451,9 +529,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                 color: Colors.grey.shade600,
                               ),
                             ),
-
                             const SizedBox(height: 8),
-
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
@@ -461,10 +537,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                                   onPressed: isTransfer ? null : onChange,
                                   child: const Text('Change'),
                                 ),
-
                                 if (!isTransfer && onAddTransfer != null) ...[
                                   const SizedBox(height: 6),
-
                                   OutlinedButton(
                                     onPressed: onAddTransfer,
                                     style: OutlinedButton.styleFrom(
@@ -503,17 +577,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     Text(
-                      '${transport.departureDate} → '
-                      '${transport.arrivalDate}',
+                      '${_formatDate(transport.departureDate)} → ${_formatDate(transport.arrivalDate)}',
                       style: const TextStyle(fontSize: 14),
                     ),
-
                     const SizedBox(height: 4),
-
                     Text(
                       '${transport.departureTime} → '
                       '${transport.arrivalTime}',
@@ -522,9 +591,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         color: Colors.grey.shade600,
                       ),
                     ),
-
                     const SizedBox(height: 4),
-
                     Text(
                       transport.duration,
                       style: TextStyle(
@@ -532,7 +599,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         color: Colors.grey.shade600,
                       ),
                     ),
-
                     if (transport.segments.length > 1) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -543,7 +609,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                         ),
                       ),
                     ],
-
                     if (isTransfer) ...[
                       const SizedBox(height: 8),
                       Align(
@@ -600,18 +665,21 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   }
 
   Future<void> chooseHotel() async {
-    final result = await Navigator.push(
+    final result = await Navigator.push<Hotel>(
       context,
       MaterialPageRoute(
         builder: (context) => HotelOptionsPage(trip: widget.trip),
       ),
     );
 
-    if (result == null || !context.mounted) {
+    if (result == null || !mounted) {
       return;
     }
 
-    final hotel = result as Hotel;
+    await _saveSelectedHotel(result);
+  }
+
+  Future<void> _saveSelectedHotel(Hotel hotel) async {
     final tripId = widget.trip['id'];
 
     try {
@@ -622,26 +690,49 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         );
       }
 
-      await HotelService.createHotel(tripId: tripId, hotel: hotel);
+      final savedHotel = await HotelService.createHotel(
+        tripId: tripId,
+        hotel: hotel,
+      );
 
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       setState(() {
-        selectedHotel = hotel;
+        selectedHotel = savedHotel;
       });
 
       await loadBudget();
 
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Hotel saved')));
     } catch (e) {
-      if (!context.mounted) return;
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to save hotel: $e')));
     }
+  }
+
+  Future<void> openHotelDetails() async {
+    if (selectedHotel == null) {
+      return;
+    }
+
+    final result = await Navigator.push<Hotel>(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            HotelDetailsPage(hotel: selectedHotel!, trip: widget.trip),
+      ),
+    );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    await _saveSelectedHotel(result);
   }
 
   // =========================
@@ -699,9 +790,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               ),
             ),
           ),
-
           const SizedBox(width: 12),
-
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -714,7 +803,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-
               if (userAmount != null && userCurrency != null)
                 Text(
                   '(${amount.toStringAsFixed(2)} $currency)',
@@ -874,7 +962,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 ),
               ),
             ),
-
             IconButton(
               icon: const Icon(Icons.close, size: 18),
               padding: EdgeInsets.zero,
@@ -956,8 +1043,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 8),
 
             Text(
-              '${widget.trip['start_date']} → '
-              '${widget.trip['end_date']}',
+              '${_formatDate(widget.trip['start_date'])} → '
+              '${_formatDate(widget.trip['end_date'])}',
               style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
 
@@ -990,6 +1077,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                           trip: widget.trip,
                           transport: transport,
                           hasSelectedHotel: selectedHotel != null,
+                          selectedHotel: selectedHotel,
                         ),
                       ),
                     );
@@ -1050,6 +1138,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                           trip: widget.trip,
                           transport: transport,
                           hasSelectedHotel: selectedHotel != null,
+                          selectedHotel: selectedHotel,
                         ),
                       ),
                     );
@@ -1104,15 +1193,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            HotelDetailsPage(hotel: selectedHotel!),
-                      ),
-                    );
-                  },
+                  onTap: openHotelDetails,
                   child: Padding(
                     padding: const EdgeInsets.all(18),
                     child: Row(

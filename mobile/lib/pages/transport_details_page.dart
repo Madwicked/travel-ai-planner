@@ -3,17 +3,20 @@ import 'package:flutter/material.dart';
 import '../models/transport.dart';
 import '../services/transport_service.dart';
 import 'transfer_selection_page.dart';
+import '../models/hotel.dart';
 
 class TransportDetailsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
   final Transport transport;
   final bool hasSelectedHotel;
+  final Hotel? selectedHotel;
 
   const TransportDetailsPage({
     super.key,
     required this.trip,
     required this.transport,
     this.hasSelectedHotel = false,
+    this.selectedHotel,
   });
 
   @override
@@ -398,6 +401,7 @@ class _TransportDetailsPageState extends State<TransportDetailsPage> {
         builder: (context) => TransferSelectionPage(
           trip: widget.trip,
           parentTransport: transport,
+          selectedHotel: widget.selectedHotel!,
         ),
       ),
     );

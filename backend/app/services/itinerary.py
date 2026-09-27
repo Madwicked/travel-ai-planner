@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy.orm import Session
 
+from app.services.airport_provider import airport_provider
 from app.models.trip import Trip
 from app.models.transport import TripTransport
 from app.models.hotel import TripHotel
@@ -12,6 +12,7 @@ TRANSFER_MINUTES = 30
 LUNCH_START = 13 * 60
 LUNCH_END = 14 * 60
 MAX_DAILY_ACTIVITY_MINUTES = 6 * 60
+ARRIVAL_ACTIVITY_DELAY = 120
 
 
 def parse_duration(duration):
@@ -124,8 +125,7 @@ def calculate_day_load(day_places):
     - actual visit durations;
     - 30-minute transfers between places.
 
-    Travel to/from lunch is not counted as activity load,
-    because it is part of the fixed daily schedule.
+    Travel to/from lunch is not counted as activity load.
     """
 
     if not day_places:
@@ -154,14 +154,11 @@ def find_place_start_time(
     """
     Calculate the earliest valid start time for a Place.
 
-    Important rules:
-
+    Rules:
     1. 30 minutes between Places.
     2. Lunch is fixed at 13:00–14:00.
-    3. If a morning Place is scheduled, it must leave
-       30 minutes for travel to lunch.
-    4. After lunch, the first Place starts at 14:30
-       because 14:00–14:30 is travel.
+    3. Morning Places must finish by 12:30.
+    4. After lunch, the first Place starts at 14:30.
     5. Opening/closing hours are respected.
     6. Arrival/departure day windows are respected.
     """
@@ -204,29 +201,9 @@ def find_place_start_time(
         )
 
     # ---------------------------------------------------------
-    # BEFORE / DURING LUNCH
+    # MORNING / LUNCH
     # ---------------------------------------------------------
 
-    # If the activity would cross lunch, move it
-    # to the afternoon.
-    if (
-        start_minutes < LUNCH_START
-        and start_minutes + visit_minutes > LUNCH_START
-    ):
-        start_minutes = max(
-            start_minutes,
-            LUNCH_END + TRANSFER_MINUTES,
-        )
-
-    # If the activity would finish after 12:30,
-    # there would not be 30 minutes left to travel to lunch.
-    #
-    # Therefore morning activities must satisfy:
-    #
-    # Place ends <= 12:30
-    # Travel to lunch 12:30–13:00
-    # Lunch 13:00–14:00
-    #
     if (
         start_minutes < LUNCH_START
         and start_minutes + visit_minutes
@@ -236,8 +213,6 @@ def find_place_start_time(
             LUNCH_END + TRANSFER_MINUTES
         )
 
-    # If we are already inside lunch,
-    # move to 14:30.
     if (
         LUNCH_START
         <= start_minutes
@@ -247,19 +222,17 @@ def find_place_start_time(
             LUNCH_END + TRANSFER_MINUTES
         )
 
-    # ---------------------------------------------------------
-    # AFTERNOON ACTIVITY
-    # ---------------------------------------------------------
-
     end_minutes = (
         start_minutes + visit_minutes
     )
 
-    # Respect opening hours.
+    # ---------------------------------------------------------
+    # OPENING HOURS
+    # ---------------------------------------------------------
+
     if start_minutes < opening_minutes:
         start_minutes = opening_minutes
 
-        # Re-check lunch after applying opening time.
         if (
             start_minutes < LUNCH_START
             and start_minutes + visit_minutes
@@ -295,8 +268,6 @@ def find_place_start_time(
     if end_minutes > closing_minutes:
         return None
 
-    # Morning activity must leave 30 minutes
-    # before lunch.
     if start_minutes < LUNCH_START:
         if (
             end_minutes
@@ -304,8 +275,6 @@ def find_place_start_time(
         ):
             return None
 
-    # Afternoon activity cannot overlap lunch
-    # or the 14:00–14:30 transfer.
     if start_minutes < LUNCH_END + TRANSFER_MINUTES:
         if end_minutes > LUNCH_START:
             return None
@@ -319,15 +288,14 @@ def schedule_places_for_day(
     day_start,
     day_end,
     trip,
+    itinerary_start_date,
 ):
     """
     Attempts to schedule Places for one specific day.
-
-    Returns the scheduled Places for that day.
     """
 
     current_date = (
-        trip.start_date
+        itinerary_start_date
         + timedelta(days=day - 1)
     )
 
@@ -381,7 +349,7 @@ def schedule_places_for_day(
                 "duration_minutes": visit_minutes,
                 "transfer_minutes": (
                     TRANSFER_MINUTES
-                    if scheduled
+                    if previous_place is not None
                     else 0
                 ),
                 "opening_time": opening_time,
@@ -438,6 +406,10 @@ def generate_itinerary_data(
         None,
     )
 
+    # =========================================================
+    # TRANSPORT DATETIME
+    # =========================================================
+
     arrival_datetime = None
     departure_datetime = None
 
@@ -452,6 +424,83 @@ def generate_itinerary_data(
             return_transport.departure_date,
             return_transport.departure_time,
         )
+
+    # =========================================================
+    # AIRPORTS
+    # =========================================================
+
+    def extract_iata_code(location):
+        if not location:
+            return None
+
+        location = str(location).strip()
+
+        if "(" not in location or ")" not in location:
+            return None
+
+        code = (
+            location.rsplit("(", 1)[-1]
+            .split(")", 1)[0]
+            .strip()
+        )
+
+        if len(code) != 3:
+            return None
+
+        return code.upper()
+
+    arrival_airport = None
+    departure_airport = None
+
+    # Arrival airport:
+    # last segment of outbound transport.
+    if (
+        outbound_transport
+        and outbound_transport.segments
+    ):
+        segments = outbound_transport.segments
+
+        if isinstance(segments, list) and segments:
+            last_segment = segments[-1]
+
+            if isinstance(last_segment, dict):
+                arrival_iata = extract_iata_code(
+                    last_segment.get(
+                        "arrival_location"
+                    )
+                )
+
+                if arrival_iata:
+                    arrival_airport = (
+                        airport_provider.find_airport_by_iata(
+                            arrival_iata
+                        )
+                    )
+
+    # Departure airport:
+    # first segment of return transport.
+    if (
+        return_transport
+        and return_transport.segments
+    ):
+        segments = return_transport.segments
+
+        if isinstance(segments, list) and segments:
+            first_segment = segments[0]
+
+            if isinstance(first_segment, dict):
+                departure_iata = extract_iata_code(
+                    first_segment.get(
+                        "departure_location"
+                    )
+                )
+
+                if departure_iata:
+                    departure_airport = (
+                        airport_provider.find_airport_by_iata(
+                            departure_iata
+                        )
+                    )
 
     # =========================================================
     # HOTEL
@@ -480,12 +529,49 @@ def generate_itinerary_data(
     )
 
     # =========================================================
+    # DEDUPLICATE PHYSICAL PLACES
+    # =========================================================
+
+    unique_places = []
+    seen_coordinates = set()
+
+    for place in places:
+        if (
+            place.latitude is None
+            or place.longitude is None
+        ):
+            unique_places.append(place)
+            continue
+
+        coordinates = (
+            float(place.latitude),
+            float(place.longitude),
+        )
+
+        if coordinates in seen_coordinates:
+            continue
+
+        seen_coordinates.add(coordinates)
+        unique_places.append(place)
+
+    places = unique_places
+
+    # =========================================================
     # BASIC DATA
     # =========================================================
 
+    itinerary_start_date = (
+        arrival_datetime.date()
+        if arrival_datetime is not None
+        else trip.start_date
+    )
+
     number_of_days = (
-        trip.end_date - trip.start_date
+        trip.end_date - itinerary_start_date
     ).days + 1
+
+    if number_of_days < 1:
+        number_of_days = 1
 
     interests = [
         interest.strip()
@@ -516,7 +602,7 @@ def generate_itinerary_data(
         number_of_days + 1,
     ):
         current_date = (
-            trip.start_date
+            itinerary_start_date
             + timedelta(days=day - 1)
         )
 
@@ -535,44 +621,45 @@ def generate_itinerary_data(
             == current_date
         )
 
-        # -----------------------------------------------------
-        # ARRIVAL DAY
-        # -----------------------------------------------------
+        # ---------------------------------------------------------
+        # ARRIVAL DAY WINDOW
+        # ---------------------------------------------------------
 
         if is_arrival_day:
-            if not include_arrival_day:
-                continue
-
-            arrival_minutes = (
-                arrival_datetime.hour * 60
-                + arrival_datetime.minute
-            )
-
-            if arrival_minutes < 6 * 60:
-                day_start = 10 * 60
-            else:
-                day_start = max(
-                    10 * 60,
-                    arrival_minutes + 120,
+            if include_arrival_day:
+                arrival_minutes = (
+                        arrival_datetime.hour * 60
+                        + arrival_datetime.minute
                 )
 
-        # -----------------------------------------------------
-        # DEPARTURE DAY
-        # -----------------------------------------------------
-
-        if is_departure_day:
-            if not include_departure_day:
+                day_start = (
+                        arrival_minutes
+                        + ARRIVAL_ACTIVITY_DELAY
+                )
+            else:
                 continue
 
-            departure_minutes = (
-                departure_datetime.hour * 60
-                + departure_datetime.minute
-            )
+        # ---------------------------------------------------------
+        # DEPARTURE DAY WINDOW
+        # ---------------------------------------------------------
 
-            day_end = min(
-                22 * 60,
-                departure_minutes - 120,
-            )
+        if is_departure_day:
+            if include_departure_day:
+                departure_minutes = (
+                    departure_datetime.hour * 60
+                    + departure_datetime.minute
+                )
+
+                day_end = min(
+                    22 * 60,
+                    departure_minutes - 120,
+                )
+            else:
+                continue
+
+        # ---------------------------------------------------------
+        # VALID WINDOW
+        # ---------------------------------------------------------
 
         if day_start < day_end:
             day_windows[day] = (
@@ -616,23 +703,20 @@ def generate_itinerary_data(
 
                 scheduled = (
                     schedule_places_for_day(
-                        places=[
-                            place
-                        ],
+                        places=[place],
                         day=day,
                         day_start=day_start,
                         day_end=day_end,
                         trip=trip,
+                        itinerary_start_date=(
+                            itinerary_start_date
+                        ),
                     )
                 )
 
                 if not scheduled:
                     continue
 
-                candidate = scheduled[0]
-
-                # Existing places must be taken
-                # into account as well.
                 existing_places = (
                     places_by_day[day]
                 )
@@ -643,15 +727,15 @@ def generate_itinerary_data(
                     else None
                 )
 
+                current_date = (
+                    itinerary_start_date
+                    + timedelta(days=day - 1)
+                )
+
                 start_minutes = (
                     find_place_start_time(
                         place=place,
-                        current_date=(
-                            trip.start_date
-                            + timedelta(
-                                days=day - 1
-                            )
-                        ),
+                        current_date=current_date,
                         day_start=day_start,
                         day_end=day_end,
                         previous_place=previous_place,
@@ -681,38 +765,27 @@ def generate_itinerary_data(
                 opening_time, closing_time = (
                     get_opening_hours(
                         place,
-                        trip.start_date
-                        + timedelta(
-                            days=day - 1
-                        ),
+                        current_date,
                     )
                 )
 
                 existing_places.append(
                     {
                         "place": place,
-                        "start_minutes":
-                            start_minutes,
-                        "duration_minutes":
-                            visit_minutes,
-                        "transfer_minutes":
-                            (
-                                TRANSFER_MINUTES
-                                if existing_places
-                                else 0
-                            ),
-                        "opening_time":
-                            opening_time,
-                        "closing_time":
-                            closing_time,
+                        "start_minutes": start_minutes,
+                        "duration_minutes": visit_minutes,
+                        "transfer_minutes": (
+                            TRANSFER_MINUTES
+                            if previous_place is not None
+                            else 0
+                        ),
+                        "opening_time": opening_time,
+                        "closing_time": closing_time,
                     }
                 )
 
                 assigned = True
-
-                current_day_index = (
-                    day_index
-                )
+                current_day_index = day_index
 
                 break
 
@@ -738,15 +811,15 @@ def generate_itinerary_data(
                         else None
                     )
 
+                    current_date = (
+                        itinerary_start_date
+                        + timedelta(days=day - 1)
+                    )
+
                     start_minutes = (
                         find_place_start_time(
                             place=place,
-                            current_date=(
-                                trip.start_date
-                                + timedelta(
-                                    days=day - 1
-                                )
-                            ),
+                            current_date=current_date,
                             day_start=day_start,
                             day_end=day_end,
                             previous_place=previous_place,
@@ -776,38 +849,27 @@ def generate_itinerary_data(
                     opening_time, closing_time = (
                         get_opening_hours(
                             place,
-                            trip.start_date
-                            + timedelta(
-                                days=day - 1
-                            ),
+                            current_date,
                         )
                     )
 
                     existing_places.append(
                         {
                             "place": place,
-                            "start_minutes":
-                                start_minutes,
-                            "duration_minutes":
-                                visit_minutes,
-                            "transfer_minutes":
-                                (
-                                    TRANSFER_MINUTES
-                                    if existing_places
-                                    else 0
-                                ),
-                            "opening_time":
-                                opening_time,
-                            "closing_time":
-                                closing_time,
+                            "start_minutes": start_minutes,
+                            "duration_minutes": visit_minutes,
+                            "transfer_minutes": (
+                                TRANSFER_MINUTES
+                                if previous_place is not None
+                                else 0
+                            ),
+                            "opening_time": opening_time,
+                            "closing_time": closing_time,
                         }
                     )
 
                     assigned = True
-
-                    current_day_index = (
-                        day_index
-                    )
+                    current_day_index = day_index
 
                     break
 
@@ -853,8 +915,6 @@ def generate_itinerary_data(
                     ]
                 )
 
-                # The transfer must begin after the
-                # previous Place has finished.
                 transfer_start = max(
                     transfer_start,
                     previous_end,
@@ -901,7 +961,7 @@ def generate_itinerary_data(
         number_of_days + 1,
     ):
         current_date = (
-            trip.start_date
+            itinerary_start_date
             + timedelta(days=day - 1)
         )
 
@@ -934,44 +994,12 @@ def generate_itinerary_data(
                 "Arrival and first impressions"
             )
 
-            # -------------------------------------------------
-            # MORNING
-            # -------------------------------------------------
+            morning = ""
+            lunch = ""
+            afternoon = ""
+            evening = ""
 
-            if outbound_transport:
-                morning = (
-                    f"Arrive in "
-                    f"{trip.destination} "
-                    f"at "
-                    f"{outbound_transport.arrival_time}"
-                )
-
-                if hotel:
-                    morning += (
-                        f" and travel to "
-                        f"{hotel.name}."
-                    )
-                else:
-                    morning += "."
-
-            elif hotel:
-                morning = (
-                    f"Arrive in "
-                    f"{trip.destination} "
-                    f"and check in at "
-                    f"{hotel.name}."
-                )
-
-            else:
-                morning = (
-                    f"Arrival in "
-                    f"{trip.destination} "
-                    "and check-in."
-                )
-
-            # -------------------------------------------------
-            # LUNCH
-            # -------------------------------------------------
+            arrival_minutes = None
 
             if arrival_datetime:
                 arrival_minutes = (
@@ -979,6 +1007,58 @@ def generate_itinerary_data(
                     + arrival_datetime.minute
                 )
 
+            if outbound_transport:
+                arrival_text = (
+                    f"Arrive in "
+                    f"{trip.destination} "
+                    f"at "
+                    f"{outbound_transport.arrival_time}"
+                )
+
+                if hotel:
+                    arrival_text += (
+                        f" and travel to "
+                        f"{hotel.name}."
+                    )
+                else:
+                    arrival_text += "."
+
+            elif hotel:
+                arrival_text = (
+                    f"Arrive in "
+                    f"{trip.destination} "
+                    f"and check in at "
+                    f"{hotel.name}."
+                )
+
+            else:
+                arrival_text = (
+                    f"Arrival in "
+                    f"{trip.destination} "
+                    "and check-in."
+                )
+
+            # -------------------------------------------------
+            # ARRIVAL → MORNING / AFTERNOON / EVENING
+            # -------------------------------------------------
+
+            if arrival_minutes is None:
+                morning = arrival_text
+
+            elif arrival_minutes < 12 * 60:
+                morning = arrival_text
+
+            elif arrival_minutes < 18 * 60:
+                afternoon = arrival_text
+
+            else:
+                evening = arrival_text
+
+            # -------------------------------------------------
+            # LUNCH
+            # -------------------------------------------------
+
+            if arrival_minutes is not None:
                 if arrival_minutes >= 12 * 60:
                     lunch = (
                         "Lunch will be skipped "
@@ -1001,42 +1081,73 @@ def generate_itinerary_data(
 
             if include_arrival_day:
                 if place_events:
-                    activity_texts = [
+                    activity_text = "\n".join(
                         event["text"]
                         for event in place_events
-                    ]
-
-                    afternoon = "\n".join(
-                        activity_texts
                     )
 
-                    evening = (
-                        "Enjoy the evening in "
-                        f"{trip.destination}."
-                    )
+                    if arrival_minutes is not None:
+                        if arrival_minutes >= 18 * 60:
+                            evening += (
+                                "\n"
+                                if evening
+                                else ""
+                            )
+                            evening += activity_text
+                        else:
+                            afternoon += (
+                                "\n"
+                                if afternoon
+                                else ""
+                            )
+                            afternoon += activity_text
+                    else:
+                        afternoon = activity_text
 
                 else:
-                    afternoon = (
+                    no_activity_text = (
                         "No activities fit in "
                         "the available time window "
                         "after arrival."
                     )
 
-                    evening = (
-                        "Enjoy a relaxed evening "
-                        "and prepare for the next day."
-                    )
+                    if arrival_minutes is not None:
+                        if arrival_minutes >= 18 * 60:
+                            evening += (
+                                "\n"
+                                if evening
+                                else ""
+                            )
+                            evening += no_activity_text
+                        else:
+                            afternoon += (
+                                "\n"
+                                if afternoon
+                                else ""
+                            )
+                            afternoon += no_activity_text
 
             else:
-                afternoon = (
+                no_activity_text = (
                     "No activities planned on "
                     "the arrival day."
                 )
 
-                evening = (
-                    "Enjoy a relaxed evening and "
-                    "prepare for the next day."
-                )
+                if arrival_minutes is not None:
+                    if arrival_minutes >= 18 * 60:
+                        evening += (
+                            "\n"
+                            if evening
+                            else ""
+                        )
+                        evening += no_activity_text
+                    else:
+                        afternoon += (
+                            "\n"
+                            if afternoon
+                            else ""
+                        )
+                        afternoon += no_activity_text
 
         # =====================================================
         # DEPARTURE DAY
@@ -1046,6 +1157,11 @@ def generate_itinerary_data(
             title = (
                 "Final day and departure"
             )
+
+            morning = ""
+            lunch = ""
+            afternoon = ""
+            evening = ""
 
             # -------------------------------------------------
             # MORNING
@@ -1096,12 +1212,9 @@ def generate_itinerary_data(
                     )
 
                     transfer_start = (
-                            departure_minutes - 120
+                        departure_minutes - 120
                     )
 
-                    # Lunch has its normal fixed window
-                    # of 13:00–14:00 if there is enough
-                    # time before the airport/station transfer.
                     if transfer_start >= LUNCH_END:
                         lunch = (
                             "13:00–14:00 Lunch at a "
@@ -1209,8 +1322,6 @@ def generate_itinerary_data(
             ]
 
             if morning_events:
-                # Add travel to lunch after the last
-                # morning Place, if applicable.
                 morning_places = [
                     item
                     for item in scheduled_places
@@ -1232,9 +1343,7 @@ def generate_itinerary_data(
                         ]
                     )
 
-                    travel_to_lunch_start = (
-                        last_end
-                    )
+                    travel_to_lunch_start = last_end
 
                     travel_to_lunch_end = (
                         travel_to_lunch_start
@@ -1281,13 +1390,6 @@ def generate_itinerary_data(
                 if event["start"] >= LUNCH_END
             ]
 
-            # The first afternoon Place requires
-            # 30 minutes of travel after lunch.
-            #
-            # This is already included in the scheduling
-            # calculation because the earliest afternoon
-            # start is 14:30.
-
             if afternoon_events:
                 afternoon = "\n".join(
                     afternoon_events
@@ -1326,11 +1428,85 @@ def generate_itinerary_data(
                 "lunch": lunch,
                 "afternoon": afternoon,
                 "evening": evening,
+
+                "arrival_airport": (
+                    {
+                        "name": arrival_airport["name"],
+                        "code": arrival_airport["iata_code"],
+                        "latitude": arrival_airport["latitude"],
+                        "longitude": arrival_airport["longitude"],
+                    }
+                    if (
+                        is_arrival_day
+                        and arrival_airport is not None
+                        and arrival_airport.get(
+                            "latitude"
+                        ) is not None
+                        and arrival_airport.get(
+                            "longitude"
+                        ) is not None
+                    )
+                    else None
+                ),
+
+                "departure_airport": (
+                    {
+                        "name": departure_airport["name"],
+                        "code": departure_airport["iata_code"],
+                        "latitude": departure_airport["latitude"],
+                        "longitude": departure_airport["longitude"],
+                    }
+                    if (
+                        is_departure_day
+                        and departure_airport is not None
+                        and departure_airport.get(
+                            "latitude"
+                        ) is not None
+                        and departure_airport.get(
+                            "longitude"
+                        ) is not None
+                    )
+                    else None
+                ),
+
+                "map_places": [
+                    {
+                        "id": item["place"].id,
+                        "name": item["place"].name,
+                        "latitude": item["place"].latitude,
+                        "longitude": item["place"].longitude,
+                    }
+                    for item in {
+                        (
+                            item["place"].name,
+                            item["place"].latitude,
+                            item["place"].longitude,
+                        ): item
+                        for item in scheduled_places
+                        if item["place"].latitude is not None
+                        and item["place"].longitude is not None
+                    }.values()
+                ],
             }
         )
+
 
     return {
         "trip_id": trip.id,
         "destination": trip.destination,
+        "hotel": (
+            {
+                "id": hotel.id,
+                "name": hotel.name,
+                "latitude": hotel.latitude,
+                "longitude": hotel.longitude,
+            }
+            if (
+                hotel is not None
+                and hotel.latitude is not None
+                and hotel.longitude is not None
+            )
+            else None
+        ),
         "itinerary": itinerary,
     }

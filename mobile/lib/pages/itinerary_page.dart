@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../api_config.dart';
+import '../widgets/itinerary_map.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -24,12 +25,123 @@ class ItineraryPage extends StatefulWidget {
 class _ItineraryPageState extends State<ItineraryPage> {
   bool isLoading = true;
   String? errorMessage;
+
   List<dynamic> itinerary = [];
+
+  Map<String, dynamic>? hotel;
+  List<Map<String, dynamic>> mapPlaces = [];
+  Set<int> selectedDays = {};
 
   @override
   void initState() {
     super.initState();
     loadItinerary();
+  }
+
+  List<Map<String, dynamic>> get filteredMapPlaces {
+    if (selectedDays.isEmpty) {
+      return mapPlaces;
+    }
+
+    final result = <Map<String, dynamic>>[];
+
+    for (final day in itinerary) {
+      if (day is! Map) {
+        continue;
+      }
+
+      final dayNumber = day['day'];
+
+      if (dayNumber is! int || !selectedDays.contains(dayNumber)) {
+        continue;
+      }
+
+      final places = day['map_places'];
+
+      if (places is List) {
+        result.addAll(
+          places.whereType<Map>().map(
+            (place) => Map<String, dynamic>.from(place),
+          ),
+        );
+      }
+    }
+
+    // Убираем повторяющиеся места,
+    // если одно место оказалось выбрано в нескольких днях.
+    final uniquePlaces = <String, Map<String, dynamic>>{};
+
+    for (final place in result) {
+      final key = [
+        place['name'],
+        place['latitude'],
+        place['longitude'],
+      ].join('|');
+
+      uniquePlaces[key] = place;
+    }
+
+    return uniquePlaces.values.toList();
+  }
+
+  List<Map<String, dynamic>> get filteredMapAirports {
+    final airports = <Map<String, dynamic>>[];
+
+    for (final day in itinerary) {
+      if (day is! Map) {
+        continue;
+      }
+
+      final dayNumber = day['day'];
+
+      if (selectedDays.isNotEmpty &&
+          (dayNumber is! int || !selectedDays.contains(dayNumber))) {
+        continue;
+      }
+
+      final arrivalAirport = day['arrival_airport'];
+
+      if (arrivalAirport is Map) {
+        airports.add({
+          ...Map<String, dynamic>.from(arrivalAirport),
+          'label': 'Arrival airport',
+        });
+      }
+
+      final departureAirport = day['departure_airport'];
+
+      if (departureAirport is Map) {
+        airports.add({
+          ...Map<String, dynamic>.from(departureAirport),
+          'label': 'Departure airport',
+        });
+      }
+    }
+
+    final uniqueAirports = <String, Map<String, dynamic>>{};
+
+    for (final airport in airports) {
+      final key = [
+        airport['code'],
+        airport['latitude'],
+        airport['longitude'],
+      ].join('|');
+
+      if (!uniqueAirports.containsKey(key)) {
+        uniqueAirports[key] = airport;
+      } else {
+        final existing = uniqueAirports[key]!;
+
+        final existingLabel = existing['label'];
+        final currentLabel = airport['label'];
+
+        if (existingLabel != currentLabel) {
+          existing['label'] = 'Airport';
+        }
+      }
+    }
+
+    return uniqueAirports.values.toList();
   }
 
   Future<void> loadItinerary() async {
@@ -55,8 +167,38 @@ class _ItineraryPageState extends State<ItineraryPage> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
+        final loadedItinerary = data['itinerary'] is List
+            ? List<dynamic>.from(data['itinerary'])
+            : <dynamic>[];
+
+        final loadedHotel = data['hotel'] is Map
+            ? Map<String, dynamic>.from(data['hotel'])
+            : null;
+
+        final loadedMapPlaces = <Map<String, dynamic>>[];
+
+        for (final day in loadedItinerary) {
+          if (day is! Map) {
+            continue;
+          }
+
+          final places = day['map_places'];
+
+          if (places is! List) {
+            continue;
+          }
+
+          for (final place in places) {
+            if (place is Map) {
+              loadedMapPlaces.add(Map<String, dynamic>.from(place));
+            }
+          }
+        }
+
         setState(() {
-          itinerary = data['itinerary'];
+          itinerary = loadedItinerary;
+          hotel = loadedHotel;
+          mapPlaces = loadedMapPlaces;
           isLoading = false;
         });
       } else {
@@ -177,6 +319,67 @@ class _ItineraryPageState extends State<ItineraryPage> {
                     style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 28),
+
+                  if (hotel != null || mapPlaces.isNotEmpty) ...[
+                    const Text(
+                      'Map',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('All days'),
+                            selected: selectedDays.isEmpty,
+                            onSelected: (_) {
+                              setState(() {
+                                selectedDays.clear();
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+
+                          ...itinerary.map((day) {
+                            final dayNumber = day['day'] as int;
+
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text('Day $dayNumber'),
+                                selected: selectedDays.contains(dayNumber),
+                                onSelected: (selected) {
+                                  setState(() {
+                                    if (selected) {
+                                      selectedDays.add(dayNumber);
+                                    } else {
+                                      selectedDays.remove(dayNumber);
+                                    }
+                                  });
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    ItineraryMap(
+                      hotel: hotel,
+                      places: filteredMapPlaces,
+                      airports: filteredMapAirports,
+                    ),
+
+                    const SizedBox(height: 28),
+                  ],
+
                   ...itinerary.map(
                     (day) => Card(
                       margin: const EdgeInsets.only(bottom: 20),

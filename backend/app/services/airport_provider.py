@@ -15,10 +15,53 @@ class AirportProvider(ABC):
     ):
         pass
 
+    @abstractmethod
+    def find_airport_by_iata(
+            self,
+            iata_code: str,
+    ):
+        pass
+
 
 class FreeAirportDbProvider(AirportProvider):
 
     BASE_URL = "https://api.freeairportdb.com/v1"
+
+    def find_airport_by_iata(self, iata_code):
+        if not iata_code:
+            return None
+
+        query = urllib.parse.urlencode({
+            "q": iata_code.upper(),
+            "limit": 100,
+        })
+
+        url = f"{self.BASE_URL}/airports?{query}"
+
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "TravelAIPlanner/1.0",
+            },
+        )
+
+        with urllib.request.urlopen(request) as response:
+            data = json.loads(
+                response.read().decode("utf-8")
+            )
+
+        for airport in data.get("data", []):
+            if (
+                    airport.get("iata")
+                    and airport["iata"].upper()
+                    == iata_code.upper()
+                    and airport.get("type")
+                    in {"large_airport", "medium_airport"}
+            ):
+                return self._format_airport(airport)
+
+        return None
 
     def find_airports(self, city, latitude, longitude):
         if latitude is not None and longitude is not None:

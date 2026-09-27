@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/places_map.dart';
 import '../models/place.dart';
 import '../services/place_service.dart';
 
@@ -88,7 +89,54 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     }
 
     return 'name:${place.name.trim().toLowerCase()}'
-        '|city:${place.city.trim().toLowerCase()}';
+        '|city:${place.city.trim().toLowerCase()}'
+        '|address:${place.address.trim().toLowerCase()}';
+  }
+
+  bool _samePlace(Place first, Place second) {
+    if (first.latitude != null &&
+        first.longitude != null &&
+        second.latitude != null &&
+        second.longitude != null) {
+      return first.latitude == second.latitude &&
+          first.longitude == second.longitude;
+    }
+
+    final firstExternalId = first.externalId?.trim();
+    final secondExternalId = second.externalId?.trim();
+
+    if (firstExternalId != null &&
+        firstExternalId.isNotEmpty &&
+        secondExternalId != null &&
+        secondExternalId.isNotEmpty) {
+      return firstExternalId == secondExternalId;
+    }
+
+    return first.name.trim().toLowerCase() ==
+            second.name.trim().toLowerCase() &&
+        first.city.trim().toLowerCase() == second.city.trim().toLowerCase() &&
+        first.address.trim().toLowerCase() ==
+            second.address.trim().toLowerCase();
+  }
+
+  void _initializeSelectedIndexes() {
+    selectedIndexes.clear();
+
+    if (!isAddingPlaces) {
+      return;
+    }
+
+    for (var index = 0; index < options.length; index++) {
+      final place = options[index];
+
+      final alreadySelected = widget.initialSelectedPlaces.any(
+        (selectedPlace) => _samePlace(selectedPlace, place),
+      );
+
+      if (alreadySelected) {
+        selectedIndexes.add(index);
+      }
+    }
   }
 
   Future<void> loadPlaceOptions() async {
@@ -123,9 +171,11 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
       final uniqueOptions = _removeDuplicatesByCategory(allOptions);
 
-      setState(() {
-        options = uniqueOptions;
+      options = uniqueOptions;
 
+      _initializeSelectedIndexes();
+
+      setState(() {
         currentOffset = uniqueOptions.length > pageSize
             ? pageSize
             : uniqueOptions.length;
@@ -167,6 +217,8 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     _scrollController.addListener(_handleScroll);
 
     nameSearchController.addListener(() {
+      if (!mounted) return;
+
       setState(() {
         nameSearch = nameSearchController.text.trim().toLowerCase();
       });
@@ -230,17 +282,44 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   }
 
   void togglePlace(int index) {
+    if (index < 0 || index >= options.length) {
+      return;
+    }
+
+    final selectedPlace = options[index];
+
+    final relatedIndexes = <int>[];
+
+    for (var i = 0; i < options.length; i++) {
+      if (_samePlace(selectedPlace, options[i])) {
+        relatedIndexes.add(i);
+      }
+    }
+
+    final isSelected = selectedIndexes.contains(index);
+
     setState(() {
-      if (selectedIndexes.contains(index)) {
-        selectedIndexes.remove(index);
+      if (isSelected) {
+        selectedIndexes.removeAll(relatedIndexes);
       } else {
-        selectedIndexes.add(index);
+        selectedIndexes.addAll(relatedIndexes);
       }
     });
   }
 
+  void togglePlaceFromMap(Place place) {
+    final index = options.indexWhere((option) => _samePlace(option, place));
+
+    if (index == -1) {
+      return;
+    }
+
+    togglePlace(index);
+  }
+
   void savePlaces() {
     final selectedPlaces = selectedIndexes
+        .where((index) => index >= 0 && index < options.length)
         .map((index) => options[index])
         .toList();
 
@@ -249,17 +328,35 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       return;
     }
 
-    final existingKeys = widget.initialSelectedPlaces
-        .map((place) => '${place.name}|${place.city}|${place.address}')
-        .toSet();
+    final result = <Place>[];
 
-    final newPlaces = selectedPlaces.where((place) {
-      final key = '${place.name}|${place.city}|${place.address}';
+    // Оставляем ранее сохранённые места, которые пользователь
+    // не снял с выбора.
+    for (final initialPlace in widget.initialSelectedPlaces) {
+      final stillSelected = selectedPlaces.any(
+        (selectedPlace) => _samePlace(selectedPlace, initialPlace),
+      );
 
-      return !existingKeys.contains(key);
-    }).toList();
+      if (stillSelected) {
+        result.add(initialPlace);
+      }
+    }
 
-    Navigator.pop(context, [...widget.initialSelectedPlaces, ...newPlaces]);
+    // Добавляем все выбранные записи.
+    // Разные категории одного физического места сохраняются.
+    for (final selectedPlace in selectedPlaces) {
+      final alreadyInResult = result.any(
+        (place) =>
+            place.externalId == selectedPlace.externalId &&
+            place.category == selectedPlace.category,
+      );
+
+      if (!alreadyInResult) {
+        result.add(selectedPlace);
+      }
+    }
+
+    Navigator.pop(context, result);
   }
 
   List<Place> get filteredOptions {
@@ -278,12 +375,11 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
         }
       }
 
+      // Уже выбранные места не показываем повторно в списке
+      // при режиме Add places.
       if (isAddingPlaces) {
         final alreadySelected = widget.initialSelectedPlaces.any(
-          (selectedPlace) =>
-              selectedPlace.name == place.name &&
-              selectedPlace.city == place.city &&
-              selectedPlace.address == place.address,
+          (selectedPlace) => _samePlace(selectedPlace, place),
         );
 
         if (alreadySelected) {
@@ -372,6 +468,69 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     return filteredOptions.take(end).toList();
   }
 
+  List<Place> get mapPlaces {
+    final result = <Place>[];
+
+    // Все текущие места после фильтров.
+    for (final place in filteredOptions) {
+      if (!result.any((existing) => _samePlace(existing, place))) {
+        result.add(place);
+      }
+    }
+
+    // Уже сохранённые места тоже обязательно оставляем на карте.
+    // Они могут быть исключены из списка.
+    for (final place in widget.initialSelectedPlaces) {
+      if (!result.any((existing) => _samePlace(existing, place))) {
+        result.add(place);
+      }
+    }
+
+    return result;
+  }
+
+  List<Place> get mapSelectedPlaces {
+    final result = <Place>[];
+
+    // Уже сохранённые места.
+    for (final place in widget.initialSelectedPlaces) {
+      if (!result.any((existing) => _samePlace(existing, place))) {
+        result.add(place);
+      }
+    }
+
+    // Текущий выбор.
+    for (final index in selectedIndexes) {
+      if (index < 0 || index >= options.length) {
+        continue;
+      }
+
+      final place = options[index];
+
+      if (!result.any((existing) => _samePlace(existing, place))) {
+        result.add(place);
+      }
+    }
+
+    // Если пользователь снял выбор с ранее сохранённого места,
+    // оно больше не должно оставаться синим.
+    if (isAddingPlaces) {
+      result.removeWhere((selectedPlace) {
+        final index = options.indexWhere(
+          (option) => _samePlace(option, selectedPlace),
+        );
+
+        if (index == -1) {
+          return false;
+        }
+
+        return !selectedIndexes.contains(index);
+      });
+    }
+
+    return result;
+  }
+
   void clearFilters() {
     setState(() {
       selectedCategories = {'All'};
@@ -382,7 +541,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       radiusKm = 5;
 
       nameSearchController.clear();
-      selectedIndexes.clear();
 
       currentOffset = 0;
 
@@ -544,8 +702,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              'Visit: '
-                              '${option.visitDuration ?? '-'}',
+                              'Visit: ${option.visitDuration ?? '-'}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
@@ -664,8 +821,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                     child: Text(
                       selectedIndexes.isEmpty
                           ? 'Save Places'
-                          : 'Save Places '
-                                '(${selectedIndexes.length})',
+                          : 'Save Places (${selectedIndexes.length})',
                     ),
                   ),
                 ),
@@ -807,7 +963,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                   setState(() {
                     searchType = selection.first;
                     options = [];
-                    selectedIndexes.clear();
                     currentOffset = 0;
                     isLoading = true;
                     errorMessage = null;
@@ -860,7 +1015,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 16),
 
-          // CATEGORY FILTER
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -888,7 +1042,6 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
                       }
                     }
 
-                    selectedIndexes.clear();
                     currentOffset = 0;
                     options = [];
                     isLoading = true;
@@ -944,6 +1097,14 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
           ),
 
           const SizedBox(height: 10),
+
+          PlacesMap(
+            places: mapPlaces,
+            selectedPlaces: mapSelectedPlaces,
+            onPlaceTap: togglePlaceFromMap,
+          ),
+
+          const SizedBox(height: 16),
 
           isListView ? buildListView() : buildCardView(),
 

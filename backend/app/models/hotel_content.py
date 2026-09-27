@@ -82,6 +82,11 @@ class HotelContent(Base):
         nullable=True,
     )
 
+    rooms = Column(
+        Text,
+        nullable=True,
+    )
+
     pets_allowed = Column(
         Boolean,
         nullable=True,

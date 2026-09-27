@@ -11,8 +11,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.database import SessionLocal
-from app.models.hotel_content import HotelContent
 
 
 load_dotenv()
@@ -223,17 +221,19 @@ class RealHotelProvider(HotelProvider):
                 response_data = response.read()
 
                 if response.headers.get(
-                    "Content-Encoding"
+                        "Content-Encoding"
                 ) == "gzip":
                     response_data = gzip.decompress(
                         response_data
                     )
 
-                return json.loads(
+                data = json.loads(
                     response_data.decode(
                         "utf-8"
                     )
                 )
+
+                return data
 
         except urllib.error.HTTPError as error:
             response_data = error.read()
@@ -255,26 +255,7 @@ class RealHotelProvider(HotelProvider):
                 f"{error.code}: {response_body}"
             ) from error
 
-    def _get_content_data(
-        self,
-        hotel_code,
-    ):
-        if not hotel_code:
-            return None
 
-        db = SessionLocal()
-
-        try:
-            return (
-                db.query(HotelContent)
-                .filter(
-                    HotelContent.hotel_code
-                    == str(hotel_code)
-                )
-                .first()
-            )
-        finally:
-            db.close()
 
     def _build_options(
         self,
@@ -302,9 +283,7 @@ class RealHotelProvider(HotelProvider):
                 "code"
             )
 
-            content = self._get_content_data(
-                hotel_code
-            )
+
 
             rooms = hotel.get(
                 "rooms",
@@ -317,6 +296,10 @@ class RealHotelProvider(HotelProvider):
                 room_name = room.get(
                     "name",
                     "Room",
+                )
+
+                room_code = room.get(
+                    "code"
                 )
 
                 rates = room.get(
@@ -378,6 +361,7 @@ class RealHotelProvider(HotelProvider):
 
                     rate_options.append(
                         {
+                            "room_code": room_code,
                             "room_name": room_name,
                             "board_code": rate.get(
                                 "boardCode",
@@ -459,79 +443,30 @@ class RealHotelProvider(HotelProvider):
                         "name",
                         "Hotel",
                     ),
-                    "city": (
-                        content.city
-                        if content
-                        and content.city
-                        else hotel.get(
-                            "destinationName",
-                            trip.destination,
-                        )
+                    "city": hotel.get(
+                        "destinationName",
+                        trip.destination,
                     ),
-                    "address": (
-                        content.address
-                        if content
-                        and content.address
-                        else hotel.get(
-                            "address",
-                            "",
-                        )
+                    "address": hotel.get(
+                        "address",
+                        "",
                     ),
-                    "description": (
-                        content.description
-                        if content
-                        else None
+                    "description": None,
+                    "category_code": hotel.get(
+                        "categoryCode"
                     ),
-                    "category_code": (
-                        content.category_code
-                        if content
-                        else hotel.get(
-                            "categoryCode"
-                        )
+                    "category_name": hotel.get(
+                        "categoryName"
                     ),
-                    "category_name": (
-                        content.category_name
-                        if content
-                        else hotel.get(
-                            "categoryName"
-                        )
+                    "accommodation_type": None,
+                    "facilities": [],
+                    "pets_allowed": None,
+                    "adults_only": None,
+                    "latitude": hotel.get(
+                        "latitude"
                     ),
-                    "accommodation_type": (
-                        content.accommodation_type
-                        if content
-                        else None
-                    ),
-                    "facilities": (
-                        json.loads(
-                            content.facilities
-                        )
-                        if content
-                        and content.facilities
-                        else []
-                    ),
-                    "pets_allowed": (
-                        content.pets_allowed
-                        if content
-                        else None
-                    ),
-                    "adults_only": (
-                        content.adults_only
-                        if content
-                        else None
-                    ),
-                    "latitude": (
-                        content.latitude
-                        if content
-                        else hotel.get(
-                            "latitude"
-                        )
-                    ),
-                    "longitude": (
-                        content.longitude
-                        if content
-                        else hotel.get(
-                            "longitude"
-                        ),
+                    "longitude": hotel.get(
+                        "longitude"
                     ),
                     "price_per_night": round(
                         min_rate
@@ -552,6 +487,12 @@ class RealHotelProvider(HotelProvider):
                     "rate_options": rate_options,
                 }
             )
+
+        options.sort(
+            key=lambda option: option[
+                "total_price"
+            ]
+        )
 
         options.sort(
             key=lambda option: option[

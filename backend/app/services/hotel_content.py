@@ -65,41 +65,100 @@ class HotelContentProvider:
                 f"{response.text}"
             )
 
-        # response.raise_for_status()
 
         return response.json()
 
-    # def get_all_hotels(
-    #     self,
-    #     language: str = "ENG",
-    # ) -> list[dict[str, Any]]:
-    #
-    #     hotels: list[dict[str, Any]] = []
-    #
-    #     page_size = 1000
-    #     start = 1
-    #
-    #     while True:
-    #         data = self.get_hotels_page(
-    #             from_hotel=start,
-    #             to_hotel=start + page_size - 1,
-    #             language=language,
-    #         )
-    #
-    #         page_hotels = data.get("hotels", [])
-    #
-    #         if not page_hotels:
-    #             break
-    #
-    #         hotels.extend(page_hotels)
-    #
-    #         if len(page_hotels) < page_size:
-    #             break
-    #
-    #         start += page_size
-    #
-    #     return hotels
-###########
+    def get_hotel(
+            self,
+            hotel_code: str,
+            language: str = "ENG",
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "fields": "all",
+            "language": language,
+            "codes": str(hotel_code),
+        }
+
+        response = requests.get(
+            f"{self.BASE_URL}{self.ENDPOINT}",
+            headers=self._headers(),
+            params=params,
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Hotelbeds Content API error "
+                f"{response.status_code}: "
+                f"{response.text}"
+            )
+
+        return response.json()
+
+    def get_facilities(
+            self,
+            language: str = "ENG",
+            from_facility: int = 1,
+            to_facility: int = 1000,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "fields": "all",
+            "language": language,
+            "from": from_facility,
+            "to": to_facility,
+            "useSecondaryLanguage": "false",
+        }
+
+        response = requests.get(
+            f"{self.BASE_URL}/hotel-content-api/1.0/types/facilities",
+            headers=self._headers(),
+            params=params,
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Hotelbeds Facilities API error "
+                f"{response.status_code}: "
+                f"{response.text}"
+            )
+
+        return response.json()
+
+    def find_hotel(
+        self,
+        hotel_code: str,
+        language: str = "ENG",
+    ) -> dict[str, Any] | None:
+        target_code = int(hotel_code)
+
+        page_size = 1000
+        start = 1
+
+        while True:
+            data = self.get_hotels_page(
+                from_hotel=start,
+                to_hotel=start + page_size - 1,
+                language=language,
+            )
+
+            hotels = data.get(
+                "hotels",
+                [],
+            )
+
+            if not hotels:
+                return None
+
+            for hotel in hotels:
+                if hotel.get("code") == target_code:
+                    return hotel
+
+            if len(hotels) < page_size:
+                return None
+
+            start += page_size
+
     def get_all_hotels(
             self,
             language: str = "ENG",

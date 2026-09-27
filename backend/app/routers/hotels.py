@@ -9,6 +9,7 @@ from app.services.hotels import (
     create_hotel,
     get_hotels,
     delete_hotel,
+    get_hotel_room_details,
 )
 
 
@@ -30,6 +31,8 @@ def get_db():
 def get_hotel_options(
     trip_id: int,
     refresh: bool = False,
+    page: int = 1,
+    limit: int = 50,
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(
@@ -46,6 +49,8 @@ def get_hotel_options(
         trip,
         db,
         refresh=refresh,
+        page=page,
+        limit=limit,
     )
 
     return {
@@ -98,6 +103,45 @@ def get_hotels_endpoint(
         db=db,
     )
 
+@router.get(
+    "/{trip_id}/hotels/{hotel_id}/rooms/{room_code}"
+)
+def get_hotel_room_details_endpoint(
+    trip_id: int,
+    hotel_id: int,
+    room_code: str,
+    db: Session = Depends(get_db),
+):
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id
+    ).first()
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    result = get_hotel_room_details(
+        trip_id=trip_id,
+        hotel_id=hotel_id,
+        room_code=room_code,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Hotel not found",
+        )
+
+    if "error" in result:
+        raise HTTPException(
+            status_code=404,
+            detail=result["error"],
+        )
+
+    return result
 
 @router.delete("/{trip_id}/hotels/{hotel_id}")
 def delete_hotel_endpoint(

@@ -26,6 +26,7 @@ def get_db():
 @router.post("/sync")
 def sync_hotel_content(
     language: str = "ENG",
+    hotel_code: str | None = None,
     db: Session = Depends(get_db),
 ):
     api_key = os.getenv("HOTELBEDS_API_KEY")
@@ -55,9 +56,37 @@ def sync_hotel_content(
 
     count = service.sync_hotels(
         language=language,
+        hotel_code=hotel_code,
     )
 
     return {
         "status": "ok",
         "saved": count,
+    }
+
+@router.get("/{hotel_code}")
+def get_hotel_content(
+    hotel_code: str,
+    db: Session = Depends(get_db),
+):
+    from app.models.hotel_content import HotelContent
+
+    hotel = (
+        db.query(HotelContent)
+        .filter(
+            HotelContent.hotel_code == str(hotel_code)
+        )
+        .first()
+    )
+
+    if hotel is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Hotel content not found",
+        )
+
+    return {
+        "hotel_code": hotel.hotel_code,
+        "name": hotel.name,
+        "rooms": hotel.rooms,
     }

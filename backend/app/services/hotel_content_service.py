@@ -4,7 +4,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.hotel_content import HotelContent
-from app.routers.hotel_content import HotelContentProvider
+from app.models.hotel_room import HotelRoom
+from app.services.hotel_content import HotelContentProvider
 
 
 class HotelContentService:
@@ -16,10 +17,329 @@ class HotelContentService:
         self.db = db
         self.provider = provider
 
-    def sync_hotels(
+    def _get_facility_map(
+            self,
+            language: str = "ENG",
+    ) -> dict[tuple[str, str], str]:
+        data = self.provider.get_facilities(
+            language=language,
+        )
+
+        facilities = data.get(
+            "facilities",
+            [],
+        )
+
+        facility_map = {}
+
+        for facility in facilities:
+            code = facility.get("code")
+            group_code = facility.get(
+                "facilityGroupCode"
+            )
+
+            description = facility.get(
+                "description"
+            )
+
+            if isinstance(description, dict):
+                description = description.get(
+                    "content"
+                )
+
+            if code is None or group_code is None:
+                continue
+
+            if not description:
+                continue
+
+            facility_map[
+                (
+                    str(code),
+                    str(group_code),
+                )
+            ] = str(description)
+
+        return facility_map
+
+    def _enrich_room_facilities(
+            self,
+            rooms: list,
+            facility_map: dict[tuple[str, str], str],
+    ) -> list:
+        enriched_rooms = []
+
+        for room in rooms:
+            room_copy = dict(room)
+
+            room_facilities = []
+
+            for facility in room.get(
+                    "roomFacilities",
+                    [],
+            ):
+                facility_copy = dict(facility)
+
+                key = (
+                    str(
+                        facility.get(
+                            "facilityCode"
+                        )
+                    ),
+                    str(
+                        facility.get(
+                            "facilityGroupCode"
+                        )
+                    ),
+                )
+
+                description = facility_map.get(key)
+
+                if description:
+                    facility_copy[
+                        "description"
+                    ] = description
+
+                room_facilities.append(
+                    facility_copy
+                )
+
+            room_copy[
+                "roomFacilities"
+            ] = room_facilities
+
+            room_stays = []
+
+            for room_stay in room.get(
+                    "roomStays",
+                    [],
+            ):
+                stay_copy = dict(room_stay)
+
+                stay_facilities = []
+
+                for facility in room_stay.get(
+                        "roomStayFacilities",
+                        [],
+                ):
+                    facility_copy = dict(
+                        facility
+                    )
+
+                    key = (
+                        str(
+                            facility.get(
+                                "facilityCode"
+                            )
+                        ),
+                        str(
+                            facility.get(
+                                "facilityGroupCode"
+                            )
+                        ),
+                    )
+
+                    description = facility_map.get(
+                        key
+                    )
+
+                    if description:
+                        facility_copy[
+                            "description"
+                        ] = description
+
+                    stay_facilities.append(
+                        facility_copy
+                    )
+
+                stay_copy[
+                    "roomStayFacilities"
+                ] = stay_facilities
+
+                room_stays.append(
+                    stay_copy
+                )
+
+            room_copy[
+                "roomStays"
+            ] = room_stays
+
+            enriched_rooms.append(
+                room_copy
+            )
+
+        return enriched_rooms
+
+    def _sync_hotel_rooms(
         self,
-        language: str = "ENG",
+        hotel: HotelContent,
+        rooms: list,
+    ) -> None:
+        self.db.query(HotelRoom).filter(
+            HotelRoom.hotel_content_id == hotel.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        for room in rooms:
+            room_code = str(
+                room.get("roomCode", "")
+            ).strip()
+
+            if not room_code:
+                continue
+
+            hotel_room = HotelRoom(
+                hotel_content_id=hotel.id,
+                room_code=room_code,
+                room_type=self._get_string(
+                    room.get("roomType")
+                ),
+                characteristic_code=self._get_string(
+                    room.get("characteristicCode")
+                ),
+                pms_room_code=self._get_string(
+                    room.get("PMSRoomCode")
+                ),
+                min_pax=room.get("minPax"),
+                max_pax=room.get("maxPax"),
+                max_adults=room.get("maxAdults"),
+                max_children=room.get("maxChildren"),
+                room_facilities=json.dumps(
+                    room.get("roomFacilities", []),
+                    ensure_ascii=False,
+                ),
+                room_stays=json.dumps(
+                    room.get("roomStays", []),
+                    ensure_ascii=False,
+                ),
+            )
+
+            self.db.add(hotel_room)
+
+    def _sync_hotel_rooms(
+        self,
+        hotel: HotelContent,
+        rooms: list,
+    ) -> None:
+        self.db.query(HotelRoom).filter(
+            HotelRoom.hotel_content_id == hotel.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        for room in rooms:
+            room_code = str(
+                room.get("roomCode", "")
+            ).strip()
+
+            if not room_code:
+                continue
+
+            hotel_room = HotelRoom(
+                hotel_content_id=hotel.id,
+                room_code=room_code,
+                room_type=self._get_string(
+                    room.get("roomType")
+                ),
+                characteristic_code=self._get_string(
+                    room.get("characteristicCode")
+                ),
+                pms_room_code=self._get_string(
+                    room.get("PMSRoomCode")
+                ),
+                min_pax=room.get("minPax"),
+                max_pax=room.get("maxPax"),
+                max_adults=room.get("maxAdults"),
+                max_children=room.get("maxChildren"),
+                room_facilities=json.dumps(
+                    room.get("roomFacilities", []),
+                    ensure_ascii=False,
+                ),
+                room_stays=json.dumps(
+                    room.get("roomStays", []),
+                    ensure_ascii=False,
+                ),
+            )
+
+            self.db.add(hotel_room)
+
+    def sync_hotels(
+            self,
+            language: str = "ENG",
+            hotel_code: str | None = None,
     ) -> int:
+        if hotel_code:
+            data = self.provider.get_hotel(
+                hotel_code=hotel_code,
+                language=language,
+            )
+
+            hotels = data.get("hotels", [])
+
+            if not hotels:
+                return 0
+
+            facility_map = self._get_facility_map(
+                language=language,
+            )
+
+            for hotel_data in hotels:
+                rooms = hotel_data.get(
+                    "rooms",
+                    [],
+                )
+
+                hotel_data["rooms"] = (
+                    self._enrich_room_facilities(
+                        rooms,
+                        facility_map,
+                    )
+                )
+
+            if not hotels:
+                return 0
+
+            hotel_data = hotels[0]
+
+            code = str(
+                hotel_data.get("code")
+            ).strip()
+
+            if not code:
+                return 0
+
+            hotel = (
+                self.db.query(HotelContent)
+                .filter(
+                    HotelContent.hotel_code == code
+                )
+                .first()
+            )
+
+            if hotel is None:
+                hotel = HotelContent(
+                    hotel_code=code,
+                )
+                self.db.add(hotel)
+
+            self._update_hotel(
+                hotel,
+                hotel_data,
+            )
+
+            self.db.add(hotel)
+            self.db.flush()
+
+            self._sync_hotel_rooms(
+                hotel,
+                hotel_data.get("rooms", []),
+            )
+
+            self.db.commit()
+
+            return 1
+
         hotels = self.provider.get_all_hotels(
             language=language,
         )
@@ -106,17 +426,25 @@ class HotelContentService:
 
     @staticmethod
     def _update_hotel(
-        hotel: HotelContent,
-        data: dict[str, Any],
+            hotel: HotelContent,
+            data: dict[str, Any],
     ) -> None:
-        hotel.name = data.get("name")
-
-        hotel.category_code = data.get(
-            "categoryCode"
+        hotel.name = (
+            HotelContentService._get_string(
+                data.get("name")
+            )
         )
 
-        hotel.category_name = data.get(
-            "categoryName"
+        hotel.category_code = (
+            HotelContentService._get_string(
+                data.get("categoryCode")
+            )
+        )
+
+        hotel.category_name = (
+            HotelContentService._get_string(
+                data.get("categoryName")
+            )
         )
 
         hotel.accommodation_type = (
@@ -131,12 +459,16 @@ class HotelContentService:
             )
         )
 
-        hotel.destination_code = data.get(
-            "destinationCode"
+        hotel.destination_code = (
+            HotelContentService._get_string(
+                data.get("destinationCode")
+            )
         )
 
-        hotel.zone_code = data.get(
-            "zoneCode"
+        hotel.zone_code = (
+            HotelContentService._get_string(
+                data.get("zoneCode")
+            )
         )
 
         hotel.city = (
@@ -179,6 +511,16 @@ class HotelContentService:
             ensure_ascii=False,
         )
 
+        rooms = data.get(
+            "rooms",
+            [],
+        )
+
+        hotel.rooms = json.dumps(
+            rooms,
+            ensure_ascii=False,
+        )
+
         hotel.pets_allowed = (
             HotelContentService._detect_pets(
                 facilities
@@ -191,6 +533,26 @@ class HotelContentService:
                 facilities,
             )
         )
+
+    @staticmethod
+    def _get_string(
+        value: Any,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            value = (
+                value.get("content")
+                or value.get("name")
+                or value.get("code")
+                or value.get("value")
+            )
+
+        if value is None:
+            return None
+
+        return str(value)
 
     @staticmethod
     def _get_accommodation_type(

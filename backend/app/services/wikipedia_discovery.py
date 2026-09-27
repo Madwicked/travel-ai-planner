@@ -126,8 +126,8 @@ class WikipediaDiscoveryService:
         return members
 
     def get_page_data(
-        self,
-        titles: list[str],
+            self,
+            titles: list[str],
     ) -> dict[str, dict]:
 
         page_data = {}
@@ -145,17 +145,29 @@ class WikipediaDiscoveryService:
                 "maxlag": 5,
             }
 
-            response = requests.post(
-                API_URL,
-                data=params,
-                headers={
-                    **HEADERS,
-                    "Promise-Non-Write-API-Action": "true",
-                },
-                timeout=REQUEST_TIMEOUT,
-            )
+            response = None
 
-            response.raise_for_status()
+            for attempt in range(3):
+                try:
+                    response = requests.post(
+                        API_URL,
+                        data=params,
+                        headers={
+                            **HEADERS,
+                            "Promise-Non-Write-API-Action": "true",
+                        },
+                        timeout=REQUEST_TIMEOUT,
+                    )
+
+                    response.raise_for_status()
+                    break
+
+                except requests.RequestException:
+                    if attempt == 2:
+                        response = None
+
+            if response is None:
+                continue
 
             data = response.json()
 

@@ -1,5 +1,6 @@
 class HotelRate {
   final String roomName;
+  final String roomCode;
   final String boardCode;
   final String boardName;
   final String rateClass;
@@ -20,6 +21,7 @@ class HotelRate {
 
   HotelRate({
     required this.roomName,
+    required this.roomCode,
     required this.boardCode,
     required this.boardName,
     required this.rateClass,
@@ -42,6 +44,7 @@ class HotelRate {
   factory HotelRate.fromJson(Map<String, dynamic> json) {
     return HotelRate(
       roomName: json['room_name'] ?? 'Room',
+      roomCode: json['room_code']?.toString() ?? '',
       boardCode: json['board_code'] ?? '',
       boardName: json['board_name'] ?? '',
       rateClass: json['rate_class'] ?? '',
@@ -131,68 +134,44 @@ class Hotel {
 
   factory Hotel.fromJson(Map<String, dynamic> json) {
     final rawRates = json['rate_options'] as List? ?? [];
-
     final rawFacilities = json['facilities'] as List? ?? [];
 
     return Hotel(
       id: json['id'],
       tripId: json['trip_id'],
-
       hotelCode: json['hotel_code']?.toString() ?? '',
-
       name: json['name']?.toString() ?? '',
-
       city: json['city']?.toString() ?? '',
-
       address: json['address']?.toString() ?? '',
-
       description: json['description']?.toString(),
-
       categoryCode: json['category_code']?.toString(),
-
       categoryName: json['category_name']?.toString(),
-
       accommodationType: json['accommodation_type']?.toString(),
-
       facilities: List<dynamic>.from(rawFacilities),
-
       petsAllowed: json['pets_allowed'] as bool?,
-
       adultsOnly: json['adults_only'] as bool?,
-
       latitude: json['latitude'] != null
           ? double.tryParse(json['latitude'].toString())
           : null,
-
-      longitude: json['longitude'] != null
-          ? double.tryParse(json['longitude'].toString())
-          : null,
-
+      longitude: json['longitude'] is List
+          ? double.tryParse(json['longitude'].first.toString())
+          : double.tryParse(json['longitude'].toString()),
       pricePerNight: (json['price_per_night'] ?? 0).toDouble(),
-
       nights: json['nights'] ?? 0,
-
       totalPrice: (json['total_price'] ?? 0).toDouble(),
-
       checkIn: DateTime.parse(json['check_in']),
-
       checkOut: DateTime.parse(json['check_out']),
-
       currency: json['currency'] ?? 'EUR',
-
       userPrice: (json['user_price'] ?? 0).toDouble(),
-
       userCurrency: json['user_currency'] ?? 'EUR',
-
       destinationPrice: (json['destination_price'] ?? 0).toDouble(),
-
       destinationCurrency: json['destination_currency'] ?? 'EUR',
-
       rateOptions: rawRates
           .map((rate) => HotelRate.fromJson(rate as Map<String, dynamic>))
           .toList(),
     );
   }
+
   Hotel copyWith({
     double? pricePerNight,
     double? totalPrice,

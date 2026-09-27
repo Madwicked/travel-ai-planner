@@ -622,19 +622,51 @@ def create_places_bulk(
     places: list[PlaceCreate],
     db: Session,
 ):
-    new_places = [
-        _build_trip_place(
+    existing_places = (
+        db.query(TripPlace)
+        .filter(
+            TripPlace.trip_id == trip_id
+        )
+        .all()
+    )
+
+    existing_keys = {
+        (
+            place.external_id,
+            place.category,
+        )
+        for place in existing_places
+    }
+
+    new_places = []
+    added_keys = set()
+
+    for place in places:
+        key = (
+            place.external_id,
+            place.category,
+        )
+
+        if key in existing_keys:
+            continue
+
+        if key in added_keys:
+            continue
+
+        new_place = _build_trip_place(
             trip_id,
             place,
         )
-        for place in places
-    ]
 
-    db.add_all(new_places)
-    db.commit()
+        new_places.append(new_place)
+        added_keys.add(key)
 
-    for place in new_places:
-        db.refresh(place)
+    if new_places:
+        db.add_all(new_places)
+        db.commit()
+
+        for place in new_places:
+            db.refresh(place)
 
     return {
         "message": "Places saved",
@@ -645,7 +677,6 @@ def create_places_bulk(
             for place in new_places
         ],
     }
-
 
 def get_places(
     trip_id: int,

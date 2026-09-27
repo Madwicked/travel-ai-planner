@@ -82,6 +82,9 @@ class HotelCreate(BaseModel):
     city: str
     address: str
 
+    latitude: float | None = None
+    longitude: float | None = None
+
     price_per_night: float
     nights: int
 
@@ -90,6 +93,8 @@ class HotelCreate(BaseModel):
 
     check_in: date
     check_out: date
+
+    hotel_data: dict = Field(default_factory=dict)
 
 
 class PlaceCreate(BaseModel):

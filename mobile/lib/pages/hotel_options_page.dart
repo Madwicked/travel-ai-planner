@@ -81,7 +81,26 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
   Future<void> selectHotelRate(Hotel hotel) async {
     if (hotel.rateOptions.isEmpty) {
-      Navigator.pop(context, hotel);
+      try {
+        final savedHotel = await HotelService.createHotel(
+          tripId: widget.trip['id'],
+          hotel: hotel,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        Navigator.pop(context, savedHotel);
+      } catch (e) {
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to save hotel: $e')));
+      }
+
       return;
     }
 
@@ -94,14 +113,37 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
       return;
     }
 
+    final updatedRates = [
+      selectedRate,
+      ...hotel.rateOptions.where((rate) => rate != selectedRate),
+    ];
+
     final selectedHotel = hotel.copyWith(
       pricePerNight: selectedRate.pricePerNight,
       totalPrice: selectedRate.totalPrice,
       currency: selectedRate.currency,
-      rateOptions: [selectedRate],
+      rateOptions: updatedRates,
     );
 
-    Navigator.pop(context, selectedHotel);
+    try {
+      final savedHotel = await HotelService.createHotel(
+        tripId: widget.trip['id'],
+        hotel: selectedHotel,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context, savedHotel);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to save hotel: $e')));
+    }
   }
 
   @override

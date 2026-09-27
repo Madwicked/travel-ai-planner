@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Date, Float, ForeignKey, Integer, JSON, String
 
 from app.database import Base
 
@@ -17,6 +17,8 @@ class TripHotel(Base):
     name = Column(String(255), nullable=False)
     city = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
     price_per_night = Column(Float, nullable=False)
     nights = Column(Integer, nullable=False)
@@ -25,3 +27,5 @@ class TripHotel(Base):
 
     check_in = Column(Date, nullable=False)
     check_out = Column(Date, nullable=False)
+
+    hotel_data = Column(JSON, nullable=False, default=dict)

@@ -37,6 +37,13 @@ def get_itinerary(
             detail="Trip not found",
         )
 
+    print(
+        "ITINERARY REQUEST:",
+        trip_id,
+        include_arrival_day,
+        include_departure_day,
+    )
+
     return generate_itinerary_data(
         trip_id=trip_id,
         db=db,
