@@ -1,53 +1,31 @@
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
+from babel.numbers import get_territory_currencies
 
 from app.models.trip import Trip
 from app.models.transport import TripTransport
 from app.models.hotel import TripHotel
 from app.models.place import TripPlace
+from app.models.trip_stop import TripStop
 from app.schemas.trip import TripCreate
 from app.models.api_cache import ApiCache
 
+def get_currency_for_country(country_code: str | None) -> str | None:
+    if not country_code:
+        return None
+
+    currencies = get_territory_currencies(
+        country_code.upper(),
+        tender=True,
+    )
+
+    if not currencies:
+        return None
+
+    return currencies[0]
 
 
-COUNTRY_CURRENCIES = {
-    "Italy": "EUR",
-    "France": "EUR",
-    "Germany": "EUR",
-    "Spain": "EUR",
-    "Portugal": "EUR",
-    "Greece": "EUR",
-    "Austria": "EUR",
-    "Serbia": "RSD",
-    "Turkey": "TRY",
-    "United Kingdom": "GBP",
-    "United States": "USD",
-    "Canada": "CAD",
-    "Japan": "JPY",
-    "China": "CNY",
-    "Thailand": "THB",
-    "United Arab Emirates": "AED",
-    "Switzerland": "CHF",
-}
 
-CITY_COUNTRIES = {
-    "Rome": "Italy",
-    "Belgrade": "Serbia",
-    "Paris": "France",
-    "Berlin": "Germany",
-    "Madrid": "Spain",
-    "Lisbon": "Portugal",
-    "Athens": "Greece",
-    "Vienna": "Austria",
-    "Istanbul": "Turkey",
-    "London": "United Kingdom",
-    "New York": "United States",
-    "Toronto": "Canada",
-    "Tokyo": "Japan",
-    "Beijing": "China",
-    "Bangkok": "Thailand",
-    "Dubai": "United Arab Emirates",
-    "Zurich": "Switzerland",
-}
 
 def create_trip(
     trip: TripCreate,
@@ -55,10 +33,11 @@ def create_trip(
 ):
     destination_country = trip.destination_country
 
-    if not destination_country:
-        destination_country = CITY_COUNTRIES.get(
-            trip.destination
-        )
+    destination_country_code = trip.destination_country_code
+
+    destination_currency = get_currency_for_country(
+        destination_country_code
+    )
 
     new_trip = Trip(
         origin=trip.origin,
@@ -67,10 +46,9 @@ def create_trip(
         origin_longitude=trip.origin_longitude,
 
         destination=trip.destination,
-        destination_country=trip.destination_country,
-        destination_currency=COUNTRY_CURRENCIES.get(
-            destination_country
-        ),
+        destination_country=destination_country,
+        destination_country_code=destination_country_code,
+        destination_currency=destination_currency,
 
         destination_latitude=trip.destination_latitude,
         destination_longitude=trip.destination_longitude,
@@ -78,7 +56,6 @@ def create_trip(
         start_date=trip.start_date,
         end_date=trip.end_date,
         travelers=trip.travelers,
-
     )
 
     db.add(new_trip)
@@ -229,4 +206,226 @@ def delete_trip(
     return {
         "message": "Trip deleted",
         "trip_id": trip_id,
+    }
+
+def create_trip_stop(
+    trip_id: int,
+    city: str,
+    country: str | None,
+    latitude: float | None,
+    longitude: float | None,
+    start_date,
+    end_date,
+    db: Session,
+):
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+    ).first()
+
+    if trip is None:
+        return None
+
+    overlapping_stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.trip_id == trip_id,
+            TripStop.start_date < end_date,
+            TripStop.end_date > start_date,
+        )
+        .first()
+    )
+
+    if overlapping_stop is not None:
+        raise ValueError(
+            f"Dates overlap with existing stop "
+            f"'{overlapping_stop.city}' "
+            f"({overlapping_stop.start_date} — "
+            f"{overlapping_stop.end_date})"
+        )
+
+    last_stop = (
+        db.query(TripStop)
+        .filter(TripStop.trip_id == trip_id)
+        .order_by(TripStop.sort_order.desc())
+        .first()
+    )
+
+    next_sort_order = (
+        last_stop.sort_order + 1
+        if last_stop
+        else 0
+    )
+
+    stop = TripStop(
+        trip_id=trip_id,
+        city=city,
+        country=country,
+        latitude=latitude,
+        longitude=longitude,
+        start_date=start_date,
+        end_date=end_date,
+        sort_order=next_sort_order,
+    )
+
+    db.add(stop)
+    db.commit()
+    db.refresh(stop)
+
+    return stop
+
+
+def get_trip_stops(
+    trip_id: int,
+    db: Session,
+):
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+    ).first()
+
+    if trip is None:
+        return None
+
+    stops = (
+        db.query(TripStop)
+        .filter(TripStop.trip_id == trip_id)
+        .order_by(TripStop.start_date, TripStop.id)
+        .all()
+    )
+
+    return [
+        {
+            "id": stop.id,
+            "trip_id": stop.trip_id,
+            "city": stop.city,
+            "country": stop.country,
+            "latitude": stop.latitude,
+            "longitude": stop.longitude,
+            "start_date": stop.start_date,
+            "end_date": stop.end_date,
+            "sort_order": stop.sort_order,
+        }
+        for stop in stops
+    ]
+
+
+def update_trip_stop(
+    trip_id: int,
+    stop_id: int,
+    city: str,
+    country: str | None,
+    latitude: float | None,
+    longitude: float | None,
+    start_date,
+    end_date,
+    db: Session,
+):
+    stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.id == stop_id,
+            TripStop.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if stop is None:
+        return None
+
+    overlapping_stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.trip_id == trip_id,
+            TripStop.id != stop_id,
+            TripStop.start_date < end_date,
+            TripStop.end_date > start_date,
+        )
+        .first()
+    )
+
+    if overlapping_stop is not None:
+        raise ValueError(
+            f"Dates overlap with existing stop "
+            f"'{overlapping_stop.city}' "
+            f"({overlapping_stop.start_date} — "
+            f"{overlapping_stop.end_date})"
+        )
+
+    stop.city = city
+    stop.country = country
+    stop.latitude = latitude
+    stop.longitude = longitude
+    stop.start_date = start_date
+    stop.end_date = end_date
+
+    db.commit()
+    db.refresh(stop)
+
+    return stop
+
+
+def delete_trip_stop(
+    trip_id: int,
+    stop_id: int,
+    db: Session,
+):
+    stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.id == stop_id,
+            TripStop.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if stop is None:
+        return None
+
+    parent_transports = (
+        db.query(TripTransport)
+        .filter(
+            TripTransport.trip_id == trip_id,
+            ~TripTransport.transport_type.startswith("Transfer"),
+        )
+        .filter(
+            (
+                (TripTransport.direction == "outbound")
+                & (TripTransport.arrival_date >= stop.start_date)
+                & (TripTransport.arrival_date <= stop.end_date)
+            )
+            |
+            (
+                (TripTransport.direction == "return")
+                & (TripTransport.departure_date >= stop.start_date)
+                & (TripTransport.departure_date <= stop.end_date)
+            )
+        )
+        .all()
+    )
+
+    parent_ids = [
+        transport.id
+        for transport in parent_transports
+        if transport.id is not None
+    ]
+
+    if parent_ids:
+        db.query(TripTransport).filter(
+            TripTransport.trip_id == trip_id,
+            TripTransport.parent_transport_id.in_(parent_ids),
+            TripTransport.transport_type.startswith("Transfer"),
+        ).delete(
+            synchronize_session=False
+        )
+
+    db.query(TripHotel).filter(
+        TripHotel.trip_id == trip_id,
+        TripHotel.stop_id == stop_id,
+    ).delete(synchronize_session=False)
+
+    db.delete(stop)
+    db.commit()
+
+    return {
+        "message": "Trip stop deleted",
+        "stop_id": stop_id,
     }

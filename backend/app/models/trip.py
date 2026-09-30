@@ -14,10 +14,15 @@ class Trip(Base):
 
     destination = Column(String(255), nullable=False)
     destination_country = Column(String(100), nullable=True)
+    destination_country_code = Column(
+        String(2),
+        nullable=True,
+    )
     destination_currency = Column(
         String(3),
         nullable=True,
     )
+
 
     user_currency = Column(
         String(3),

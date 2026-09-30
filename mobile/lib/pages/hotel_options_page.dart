@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/hotel.dart';
+import '../models/trip_stop.dart';
 import '../models/hotel_filter_state.dart';
 import '../services/hotel_service.dart';
 import 'hotel_filters_page.dart';
@@ -8,8 +9,9 @@ import 'hotel_rates_page.dart';
 
 class HotelOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
+  final TripStop? stop;
 
-  const HotelOptionsPage({super.key, required this.trip});
+  const HotelOptionsPage({super.key, required this.trip, this.stop});
 
   @override
   State<HotelOptionsPage> createState() => _HotelOptionsPageState();
@@ -39,7 +41,10 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
     final tripId = widget.trip['id'];
 
     try {
-      final loadedOptions = await HotelService.getHotelOptions(tripId);
+      final loadedOptions = await HotelService.getHotelOptions(
+        tripId,
+        stopId: widget.stop?.id,
+      );
 
       if (!mounted) return;
 
@@ -85,6 +90,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
         final savedHotel = await HotelService.createHotel(
           tripId: widget.trip['id'],
           hotel: hotel,
+          stopId: widget.stop?.id,
         );
 
         if (!mounted) {
@@ -129,6 +135,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
       final savedHotel = await HotelService.createHotel(
         tripId: widget.trip['id'],
         hotel: selectedHotel,
+        stopId: widget.stop?.id,
       );
 
       if (!mounted) {
@@ -369,7 +376,7 @@ class _HotelOptionsPageState extends State<HotelOptionsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final destination = widget.trip['destination'];
+    final destination = widget.stop?.city ?? widget.trip['destination'];
 
     return Scaffold(
       appBar: AppBar(

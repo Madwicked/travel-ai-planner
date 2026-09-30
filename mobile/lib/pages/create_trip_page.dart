@@ -176,6 +176,7 @@ class _CreateTripPageState extends State<CreateTripPage> {
         originLatitude: selectedOrigin!.latitude,
         originLongitude: selectedOrigin!.longitude,
         destination: selectedDestination!.name,
+        destinationCountryCode: selectedDestination!.countryCode,
         destinationCountry: selectedDestination!.country,
         destinationLatitude: selectedDestination!.latitude,
         destinationLongitude: selectedDestination!.longitude,

@@ -7,12 +7,14 @@ import '../models/hotel.dart';
 import '../models/hotel_room.dart';
 
 class HotelService {
-  static Future<List<Hotel>> getHotelOptions(int tripId) async {
-    final url = Uri.parse(
-      '${ApiConfig.baseUrl}/api/trips/$tripId/hotels/options',
-    );
+  static Future<List<Hotel>> getHotelOptions(int tripId, {int? stopId}) async {
+    var url = '${ApiConfig.baseUrl}/api/trips/$tripId/hotels/options';
 
-    final response = await http.get(url);
+    if (stopId != null) {
+      url += '?stop_id=$stopId';
+    }
+
+    final response = await http.get(Uri.parse(url));
 
     if (response.statusCode != 200) {
       throw Exception('Server error: ${response.statusCode}');
@@ -28,6 +30,7 @@ class HotelService {
   static Future<Hotel> createHotel({
     required int tripId,
     required Hotel hotel,
+    int? stopId,
   }) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/hotels');
 
@@ -43,6 +46,7 @@ class HotelService {
       'check_out': hotel.checkOut.toIso8601String().split('T').first,
       'latitude': hotel.latitude,
       'longitude': hotel.longitude,
+      'stop_id': stopId,
       'hotel_data': {
         'hotel_code': hotel.hotelCode,
         'room_code': hotel.rateOptions.isNotEmpty
@@ -128,7 +132,9 @@ class HotelService {
     final response = await http.get(url);
 
     if (response.statusCode != 200) {
-      throw Exception('Server error: ${response.statusCode}');
+      throw Exception(
+        'Server error: ${response.statusCode}, body: ${response.body}',
+      );
     }
 
     final data = jsonDecode(response.body);

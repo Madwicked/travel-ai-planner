@@ -12,6 +12,7 @@ class TripCreate(BaseModel):
 
     destination: str = Field(min_length=1)
     destination_country: str | None = None
+    destination_country_code: str | None = None
     destination_latitude: float | None = None
     destination_longitude: float | None = None
 
@@ -62,6 +63,9 @@ class TransportCreate(BaseModel):
     transport_price: float
     currency: str
 
+    parent_transport_id: int | None = None
+    transfer_data: dict | None = None
+
     segments: list[dict] = Field(default_factory=list)
     stops: int = 0
     layovers: list[dict] = Field(default_factory=list)
@@ -96,6 +100,7 @@ class HotelCreate(BaseModel):
 
     hotel_data: dict = Field(default_factory=dict)
 
+    stop_id: int | None = None
 
 class PlaceCreate(BaseModel):
     external_id: str | None = None
@@ -125,3 +130,32 @@ class CurrencyUpdate(BaseModel):
 
 class FoodPreferenceUpdate(BaseModel):
     food_preference: str
+
+class TripStopCreate(BaseModel):
+    city: str = Field(min_length=1)
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self
+
+
+class TripStopUpdate(BaseModel):
+    city: str = Field(min_length=1)
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self

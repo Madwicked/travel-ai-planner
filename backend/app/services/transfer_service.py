@@ -2,7 +2,6 @@ from app.services.transfer_provider import transfer_provider
 
 
 class TransferService:
-
     @staticmethod
     def get_transfer_options(
         *,

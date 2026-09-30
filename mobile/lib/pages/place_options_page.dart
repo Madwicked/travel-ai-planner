@@ -24,6 +24,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   List<Place> options = [];
 
   final Set<int> selectedIndexes = {};
+  final Set<String> selectedPlaceIds = {};
 
   bool isLoading = true;
   String? errorMessage;
@@ -126,14 +127,14 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       return;
     }
 
+    for (final place in widget.initialSelectedPlaces) {
+      selectedPlaceIds.add(_placeIdentity(place));
+    }
+
     for (var index = 0; index < options.length; index++) {
       final place = options[index];
 
-      final alreadySelected = widget.initialSelectedPlaces.any(
-        (selectedPlace) => _samePlace(selectedPlace, place),
-      );
-
-      if (alreadySelected) {
+      if (selectedPlaceIds.contains(_placeIdentity(place))) {
         selectedIndexes.add(index);
       }
     }
@@ -296,12 +297,15 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       }
     }
 
-    final isSelected = selectedIndexes.contains(index);
+    final placeId = _placeIdentity(selectedPlace);
+    final isSelected = selectedPlaceIds.contains(placeId);
 
     setState(() {
       if (isSelected) {
+        selectedPlaceIds.remove(placeId);
         selectedIndexes.removeAll(relatedIndexes);
       } else {
+        selectedPlaceIds.add(placeId);
         selectedIndexes.addAll(relatedIndexes);
       }
     });
@@ -375,7 +379,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
         }
       }
 
-      // Уже выбранные места не показываем повторно в списке
+      // Уже сохранённые места не показываем повторно
       // при режиме Add places.
       if (isAddingPlaces) {
         final alreadySelected = widget.initialSelectedPlaces.any(
@@ -418,16 +422,18 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       displayIndexes.addAll(filteredIndexes);
     }
 
-    if (selectedSort == 'Significance') {
-      return displayIndexes.map((index) => options[index]).toList();
-    }
-
+    // Разделяем места на обычные и выбранные.
+    // Выбранные всегда будут внизу списка.
     final selected = displayIndexes
-        .where((index) => selectedIndexes.contains(index))
+        .where(
+          (index) => selectedPlaceIds.contains(_placeIdentity(options[index])),
+        )
         .toList();
 
     final unselected = displayIndexes
-        .where((index) => !selectedIndexes.contains(index))
+        .where(
+          (index) => !selectedPlaceIds.contains(_placeIdentity(options[index])),
+        )
         .toList();
 
     int comparePlaces(int a, int b) {
@@ -448,17 +454,23 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
           return ratingB.compareTo(ratingA);
 
         case 'Name':
-        default:
           return placeA.name.toLowerCase().compareTo(placeB.name.toLowerCase());
+
+        case 'Significance':
+        default:
+          // Для Significance сохраняем исходный порядок,
+          // который пришёл с backend.
+          return a.compareTo(b);
       }
     }
 
-    selected.sort(comparePlaces);
     unselected.sort(comparePlaces);
+    selected.sort(comparePlaces);
 
+    // Сначала обычные места, выбранные — в самом низу.
     return [
-      ...selected.map((index) => options[index]),
       ...unselected.map((index) => options[index]),
+      ...selected.map((index) => options[index]),
     ];
   }
 

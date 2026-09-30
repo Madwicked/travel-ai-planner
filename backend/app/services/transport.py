@@ -6,6 +6,8 @@ from app.models.transport import TripTransport
 from app.schemas.trip import TransportCreate, TransportUpdate
 from app.services.transport_provider import transport_provider
 from app.services.cache_service import cache_service
+from app.services.trip_consistency import get_trip_consistency_warnings
+
 TRANSPORT_CACHE_TTL_MINUTES = 30
 
 
@@ -231,10 +233,13 @@ def create_transport(
 
     new_transport = TripTransport(
         trip_id=trip_id,
+        parent_transport_id=transport.parent_transport_id,
         direction=transport.direction,
         transport_type=transport.transport_type,
         transport_price=transport.transport_price,
         currency=transport.currency,
+
+        transfer_data=transport.transfer_data,
 
         segments=transport.segments,
         stops=transport.stops,
@@ -255,11 +260,17 @@ def create_transport(
     db.commit()
     db.refresh(new_transport)
 
+    warnings = get_trip_consistency_warnings(
+        trip_id=trip_id,
+        db=db,
+    )
+
     return {
         "message": "Transport created",
         "transport": {
             "id": new_transport.id,
             "trip_id": new_transport.trip_id,
+            "parent_transport_id": new_transport.parent_transport_id,
             "direction": new_transport.direction,
             "type": new_transport.transport_type,
             "price": new_transport.transport_price,
@@ -267,6 +278,7 @@ def create_transport(
             "stops": new_transport.stops or 0,
             "segments": new_transport.segments or [],
             "layovers": new_transport.layovers or [],
+            "transfer_data": new_transport.transfer_data,
 
             "destination_price": currency_service.convert(
                 amount=new_transport.transport_price,
@@ -290,6 +302,7 @@ def create_transport(
             "arrival_time": new_transport.arrival_time,
             "arrival_location": new_transport.arrival_location,
         },
+        "warnings": warnings,
     }
 
 
@@ -316,6 +329,7 @@ def get_transports(
         "transports": [
             {
                 "id": transport.id,
+                "parent_transport_id": transport.parent_transport_id,
                 "direction": transport.direction,
                 "type": transport.transport_type,
                 "price": transport.transport_price,
@@ -323,6 +337,7 @@ def get_transports(
                 "stops": transport.stops or 0,
                 "segments": transport.segments or [],
                 "layovers": transport.layovers or [],
+                "transfer_data": transport.transfer_data,
 
                 "destination_price": currency_service.convert(
                     amount=transport.transport_price,

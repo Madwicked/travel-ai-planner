@@ -14,6 +14,10 @@ import '../services/hotel_service.dart';
 import '../services/place_service.dart';
 import '../services/transport_service.dart';
 import 'transfer_selection_page.dart';
+import '../models/trip_stop.dart';
+import '../services/trip_stop_service.dart';
+import '../models/location.dart';
+import '../widgets/trip_dialogs.dart';
 
 class TripDetailsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -31,9 +35,16 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   String? outboundTransferChoice;
   String? returnTransferChoice;
 
+  // Temporary legacy state.
+  // It is still used by transfer selection and TransportDetailsPage.
   Hotel? selectedHotel;
 
+  Map<int, Hotel> selectedStopHotels = {};
+
   List<Place> selectedPlaces = [];
+
+  List<TripStop> tripStops = [];
+  bool isLoadingTripStops = true;
 
   String foodPreference = 'Mixed';
 
@@ -79,7 +90,643 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     loadSelectedTransports();
     loadSelectedHotel();
     loadSelectedPlaces();
+    loadTripStops();
     loadBudget();
+  }
+
+  Future<void> addTripStop() async {
+    Location? selectedCity;
+
+    DateTime? startDate;
+    DateTime? endDate;
+
+    bool citySelected = false;
+
+    final tripStartDate = DateTime.parse(widget.trip['start_date'].toString());
+
+    final tripEndDate = DateTime.parse(widget.trip['end_date'].toString());
+
+    final tripCountry = widget.trip['destination_country']
+        ?.toString()
+        .trim()
+        .toLowerCase();
+
+    final cityController = TextEditingController();
+
+    bool isStartDateAvailable(DateTime date) {
+      if (!date.isBefore(tripEndDate)) {
+        return false;
+      }
+
+      for (final stop in tripStops) {
+        final stopStart = DateTime(
+          stop.startDate.year,
+          stop.startDate.month,
+          stop.startDate.day,
+        );
+
+        final stopEnd = DateTime(
+          stop.endDate.year,
+          stop.endDate.month,
+          stop.endDate.day,
+        );
+
+        if (!date.isBefore(stopStart) && date.isBefore(stopEnd)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    bool isEndDateAvailable(DateTime date) {
+      if (startDate == null || !date.isAfter(startDate!)) {
+        return false;
+      }
+
+      for (final stop in tripStops) {
+        final stopStart = DateTime(
+          stop.startDate.year,
+          stop.startDate.month,
+          stop.startDate.day,
+        );
+
+        final stopEnd = DateTime(
+          stop.endDate.year,
+          stop.endDate.month,
+          stop.endDate.day,
+        );
+
+        if (date.isAfter(stopStart) && !date.isAfter(stopEnd)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    DateTime findAvailableDate(
+      DateTime initialDate,
+      DateTime minimumDate,
+      DateTime maximumDate,
+      bool isStartDate,
+    ) {
+      var date = initialDate;
+
+      if (date.isBefore(minimumDate)) {
+        date = minimumDate;
+      }
+
+      if (date.isAfter(maximumDate)) {
+        date = maximumDate;
+      }
+
+      while (date.isBefore(maximumDate) || date.isAtSameMomentAs(maximumDate)) {
+        final available = isStartDate
+            ? isStartDateAvailable(date)
+            : isEndDateAvailable(date);
+
+        if (available) {
+          return date;
+        }
+
+        date = date.add(const Duration(days: 1));
+      }
+
+      return minimumDate;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> selectStopDate(bool isStartDate) async {
+              final minimumDate = isStartDate
+                  ? tripStartDate
+                  : startDate!.add(const Duration(days: 1));
+
+              final maximumDate = tripEndDate;
+
+              if (minimumDate.isAfter(maximumDate)) {
+                return;
+              }
+
+              final initialDate = isStartDate
+                  ? (startDate ?? tripStartDate)
+                  : (endDate ?? minimumDate);
+
+              final safeInitialDate = findAvailableDate(
+                initialDate,
+                minimumDate,
+                maximumDate,
+                isStartDate,
+              );
+
+              DateTime? calendarInitialDate;
+
+              final isDateAvailable = (DateTime date) {
+                return isStartDate
+                    ? isStartDateAvailable(date)
+                    : isEndDateAvailable(date);
+              };
+
+              // Сначала пытаемся использовать текущую дату.
+              if (!safeInitialDate.isBefore(minimumDate) &&
+                  !safeInitialDate.isAfter(maximumDate) &&
+                  isDateAvailable(safeInitialDate)) {
+                calendarInitialDate = safeInitialDate;
+              } else {
+                // Ищем ближайшую доступную дату вперёд.
+                DateTime candidate = safeInitialDate.isBefore(minimumDate)
+                    ? minimumDate
+                    : safeInitialDate;
+
+                while (!candidate.isAfter(maximumDate)) {
+                  if (isDateAvailable(candidate)) {
+                    calendarInitialDate = candidate;
+                    break;
+                  }
+
+                  candidate = candidate.add(const Duration(days: 1));
+                }
+              }
+
+              // Если в разрешённом диапазоне вообще нет доступных дат,
+              // календарь открывать нельзя.
+              if (calendarInitialDate == null) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        isStartDate
+                            ? 'Нет доступных дат для начала остановки.'
+                            : 'Нет доступных дат для окончания остановки.',
+                      ),
+                    ),
+                  );
+                }
+
+                return;
+              }
+
+              final selected = await showDialog<DateTime>(
+                context: context,
+                builder: (calendarContext) {
+                  return Dialog(
+                    child: CalendarDatePicker(
+                      initialDate: calendarInitialDate!,
+                      firstDate: minimumDate,
+                      lastDate: maximumDate,
+                      selectableDayPredicate: isDateAvailable,
+                      onDateChanged: (date) {
+                        Navigator.of(calendarContext).pop(date);
+                      },
+                    ),
+                  );
+                },
+              );
+
+              if (selected == null) {
+                return;
+              }
+
+              setDialogState(() {
+                if (isStartDate) {
+                  startDate = selected;
+
+                  if (endDate != null && !endDate!.isAfter(selected)) {
+                    endDate = null;
+                  }
+                } else {
+                  endDate = selected;
+                }
+              });
+            }
+
+            String formatStopDate(DateTime? date) {
+              if (date == null) {
+                return 'Select date';
+              }
+
+              return '${date.day.toString().padLeft(2, '0')}.'
+                  '${date.month.toString().padLeft(2, '0')}.'
+                  '${date.year}';
+            }
+
+            return AlertDialog(
+              title: const Text('Add city'),
+              content: SizedBox(
+                width: 500,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'City',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      RawAutocomplete<Location>(
+                        optionsBuilder:
+                            (TextEditingValue textEditingValue) async {
+                              final query = textEditingValue.text.trim();
+
+                              if (query.length < 2 || citySelected) {
+                                return const Iterable<Location>.empty();
+                              }
+
+                              final cities = await ApiService.searchCities(
+                                query,
+                              );
+
+                              final locations = cities
+                                  .map((city) => Location.fromJson(city))
+                                  .toList();
+
+                              if (tripCountry == null || tripCountry.isEmpty) {
+                                return locations;
+                              }
+
+                              locations.sort((a, b) {
+                                final aIsTripCountry =
+                                    a.country.trim().toLowerCase() ==
+                                    tripCountry;
+
+                                final bIsTripCountry =
+                                    b.country.trim().toLowerCase() ==
+                                    tripCountry;
+
+                                if (aIsTripCountry && !bIsTripCountry) {
+                                  return -1;
+                                }
+
+                                if (!aIsTripCountry && bIsTripCountry) {
+                                  return 1;
+                                }
+
+                                return 0;
+                              });
+
+                              return locations;
+                            },
+                        displayStringForOption: (city) {
+                          return city.displayName;
+                        },
+                        onSelected: (city) {
+                          selectedCity = city;
+                          citySelected = true;
+
+                          cityController.text = city.displayName;
+
+                          setDialogState(() {});
+                        },
+                        fieldViewBuilder:
+                            (context, controller, focusNode, onFieldSubmitted) {
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                onChanged: (value) {
+                                  cityController.text = value;
+
+                                  if (citySelected &&
+                                      value != selectedCity?.displayName) {
+                                    citySelected = false;
+                                    selectedCity = null;
+                                  }
+
+                                  setDialogState(() {});
+                                },
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. Belgrade, Serbia',
+                                  prefixIcon: const Icon(
+                                    Icons.location_on_outlined,
+                                  ),
+                                  suffixIcon: controller.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: () {
+                                            controller.clear();
+                                            cityController.clear();
+
+                                            selectedCity = null;
+                                            citySelected = false;
+
+                                            setDialogState(() {});
+                                          },
+                                        )
+                                      : null,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                              );
+                            },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          if (citySelected) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              elevation: 4,
+                              child: ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (context, index) {
+                                  final city = options.elementAt(index);
+
+                                  return ListTile(
+                                    title: Text(city.name),
+                                    subtitle: Text(city.country),
+                                    onTap: () {
+                                      onSelected(city);
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Stay dates',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                selectStopDate(true);
+                              },
+                              icon: const Icon(Icons.calendar_today),
+                              label: Text(formatStopDate(startDate)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: startDate == null
+                                  ? null
+                                  : () {
+                                      selectStopDate(false);
+                                    },
+                              icon: const Icon(Icons.calendar_today),
+                              label: Text(formatStopDate(endDate)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Trip dates: '
+                        '${tripStartDate.day.toString().padLeft(2, '0')}.'
+                        '${tripStartDate.month.toString().padLeft(2, '0')}.'
+                        '${tripStartDate.year}'
+                        ' — '
+                        '${tripEndDate.day.toString().padLeft(2, '0')}.'
+                        '${tripEndDate.month.toString().padLeft(2, '0')}.'
+                        '${tripEndDate.year}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed:
+                      selectedCity == null ||
+                          startDate == null ||
+                          endDate == null
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop(true);
+                        },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != true ||
+        selectedCity == null ||
+        startDate == null ||
+        endDate == null) {
+      cityController.dispose();
+      return;
+    }
+
+    try {
+      await TripStopService.createTripStop(
+        tripId: widget.trip['id'],
+        city: selectedCity!.name,
+        country: selectedCity!.country,
+        latitude: selectedCity!.latitude,
+        longitude: selectedCity!.longitude,
+        startDate: startDate!,
+        endDate: endDate!,
+      );
+
+      await loadTripStops();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${selectedCity!.name} added to trip.')),
+      );
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to add city: $e')));
+    } finally {
+      cityController.dispose();
+    }
+  }
+
+  Hotel? _getHotelForTransport(Transport transport) {
+    print(
+      'FIND HOTEL FOR TRANSPORT: '
+      'direction=${transport.direction}, '
+      'arrival=${transport.arrivalDate}, '
+      'departure=${transport.departureDate}, '
+      'tripStops=${tripStops.length}, '
+      'selectedStopHotels=${selectedStopHotels.keys.toList()}',
+    );
+
+    if (tripStops.isEmpty) {
+      return selectedHotel;
+    }
+
+    final bool isReturn = transport.direction == 'return';
+
+    final String dateString = isReturn
+        ? transport.departureDate
+        : transport.arrivalDate;
+
+    final DateTime? transportDate = DateTime.tryParse(dateString);
+
+    if (transportDate == null) {
+      return null;
+    }
+
+    if (isReturn) {
+      // Return transfer: hotel -> departure airport.
+      // Find the stop in which the departure date belongs.
+      for (final stop in tripStops) {
+        final hotel = selectedStopHotels[stop.id];
+
+        if (hotel == null) {
+          continue;
+        }
+
+        final bool matchesDate =
+            !transportDate.isBefore(stop.startDate) &&
+            !transportDate.isAfter(stop.endDate);
+
+        if (!matchesDate) {
+          continue;
+        }
+
+        print(
+          'HOTEL FOR RETURN TRANSFER: '
+          'date=$transportDate, '
+          'stop=${stop.city}, '
+          'hotel=${hotel.name}, '
+          'hotelId=${hotel.id}',
+        );
+
+        return hotel;
+      }
+    } else {
+      // Outbound transfer: arrival airport -> hotel.
+      //
+      // The hotel can start on the next day, so first find
+      // the first selected hotel whose stop starts on or after
+      // the arrival date.
+      final matchingStops =
+          tripStops
+              .where(
+                (stop) =>
+                    !stop.startDate.isBefore(transportDate) &&
+                    selectedStopHotels.containsKey(stop.id),
+              )
+              .toList()
+            ..sort((a, b) => a.startDate.compareTo(b.startDate));
+
+      if (matchingStops.isNotEmpty) {
+        final stop = matchingStops.first;
+        final hotel = selectedStopHotels[stop.id];
+
+        print(
+          'HOTEL FOR OUTBOUND TRANSFER: '
+          'arrivalDate=$transportDate, '
+          'stop=${stop.city}, '
+          'hotel=${hotel?.name}, '
+          'hotelId=${hotel?.id}',
+        );
+
+        return hotel;
+      }
+
+      // Fallback: if the arrival date is already inside a stop,
+      // use that stop's hotel.
+      for (final stop in tripStops) {
+        final hotel = selectedStopHotels[stop.id];
+
+        if (hotel == null) {
+          continue;
+        }
+
+        final bool matchesDate =
+            !transportDate.isBefore(stop.startDate) &&
+            transportDate.isBefore(stop.endDate);
+
+        if (!matchesDate) {
+          continue;
+        }
+
+        print(
+          'HOTEL FOR OUTBOUND TRANSFER FALLBACK: '
+          'date=$transportDate, '
+          'stop=${stop.city}, '
+          'hotel=${hotel.name}, '
+          'hotelId=${hotel.id}',
+        );
+
+        return hotel;
+      }
+    }
+
+    print(
+      'NO HOTEL FOR TRANSPORT: '
+      'direction=${transport.direction}, '
+      'date=$transportDate',
+    );
+
+    return null;
+  }
+
+  Future<void> loadTripStops() async {
+    try {
+      final stops = await TripStopService.getTripStops(widget.trip['id']);
+
+      print('TRIP STOPS LOADED: ${stops.length}');
+
+      for (final stop in stops) {
+        print(
+          'TRIP STOP: '
+          'id=${stop.id}, '
+          'city=${stop.city}, '
+          'start=${stop.startDate}, '
+          'end=${stop.endDate}',
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        tripStops = stops;
+        isLoadingTripStops = false;
+      });
+    } catch (e) {
+      print('TRIP STOPS ERROR: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        isLoadingTripStops = false;
+      });
+    }
   }
 
   // =========================
@@ -103,17 +750,19 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             .where((transport) => transport.direction == 'return')
             .toList();
 
-        if (selectedOutboundTransports.any(
-          (transport) => transport.type.startsWith('Transfer'),
-        )) {
-          outboundTransferChoice = 'Transfer';
-        }
+        outboundTransferChoice =
+            selectedOutboundTransports.any(
+              (transport) => transport.type.startsWith('Transfer'),
+            )
+            ? 'Transfer'
+            : null;
 
-        if (selectedReturnTransports.any(
-          (transport) => transport.type.startsWith('Transfer'),
-        )) {
-          returnTransferChoice = 'Transfer';
-        }
+        returnTransferChoice =
+            selectedReturnTransports.any(
+              (transport) => transport.type.startsWith('Transfer'),
+            )
+            ? 'Transfer'
+            : null;
 
         isLoadingTransport = false;
       });
@@ -181,6 +830,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     await loadSelectedTransports();
     await loadBudget();
+
+    if (!mounted) {
+      return;
+    }
+
+    await _offerTransfersForSelectedHotels(direction: 'outbound');
   }
 
   Future<void> chooseReturnTransport() async {
@@ -216,14 +871,34 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
 
     await loadSelectedTransports();
+
     await loadBudget();
+
+    if (!mounted) {
+      return;
+    }
+
+    await _offerTransfersForSelectedHotels(direction: 'return');
   }
 
   Future<void> _addTransfer({required Transport parentTransport}) async {
-    if (selectedHotel == null) {
+    final hotel = _getHotelForTransport(parentTransport);
+
+    print(
+      'TRANSFER HOTEL BEFORE PAGE: '
+      'id=${hotel?.id}, '
+      'name=${hotel?.name}, '
+      'stopId=${hotel?.stopId}, '
+      'lat=${hotel?.latitude}, '
+      'lng=${hotel?.longitude}',
+    );
+
+    if (hotel == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Select a hotel before adding a transfer.'),
+          content: Text(
+            'Select a hotel for the relevant city before adding a transfer.',
+          ),
         ),
       );
       return;
@@ -235,7 +910,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         builder: (context) => TransferSelectionPage(
           trip: widget.trip,
           parentTransport: parentTransport,
-          selectedHotel: selectedHotel!,
+          selectedHotel: hotel,
         ),
       ),
     );
@@ -279,8 +954,30 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       transferType,
     ].where((value) => value.isNotEmpty).join(' · ');
 
+    final bool isReturn = parentTransport.direction == 'return';
+
     final transfer = Transport(
       direction: parentTransport.direction,
+      parentTransportId: parentTransport.id,
+      transferData: {
+        'vehicle_name': vehicleName,
+        'category_name': categoryName,
+        'transfer_type': transferType,
+        'extras': option['extras'] is List
+            ? List<Map<String, dynamic>>.from(
+                (option['extras'] as List).map(
+                  (item) => Map<String, dynamic>.from(item),
+                ),
+              )
+            : <Map<String, dynamic>>[],
+        'cancellation_policies': option['cancellation_policies'] is List
+            ? List<Map<String, dynamic>>.from(
+                (option['cancellation_policies'] as List).map(
+                  (item) => Map<String, dynamic>.from(item),
+                ),
+              )
+            : <Map<String, dynamic>>[],
+      },
       type: transferName.isEmpty ? 'Transfer' : 'Transfer · $transferName',
       price: price,
       currency: currency,
@@ -289,16 +986,32 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       userPrice: price,
       userCurrency: currency,
       duration: 'Transfer',
-      departureDate: parentTransport.departureDate,
-      departureTime: parentTransport.departureTime,
-      departureLocation: parentTransport.direction == 'return'
-          ? selectedHotel!.name
-          : parentTransport.departureLocation,
-      arrivalDate: parentTransport.arrivalDate,
-      arrivalTime: parentTransport.arrivalTime,
-      arrivalLocation: parentTransport.direction == 'return'
-          ? parentTransport.arrivalLocation
-          : selectedHotel!.name,
+
+      // Outbound: аэропорт прибытия → отель
+      // Return: отель → аэропорт вылета
+      departureDate: isReturn
+          ? parentTransport.departureDate
+          : parentTransport.arrivalDate,
+
+      departureTime: isReturn
+          ? parentTransport.departureTime
+          : parentTransport.arrivalTime,
+
+      departureLocation: isReturn
+          ? hotel.name
+          : parentTransport.arrivalLocation,
+
+      arrivalDate: isReturn
+          ? parentTransport.departureDate
+          : parentTransport.arrivalDate,
+
+      arrivalTime: isReturn
+          ? parentTransport.departureTime
+          : parentTransport.arrivalTime,
+
+      arrivalLocation: isReturn
+          ? parentTransport.departureLocation
+          : hotel.name,
     );
 
     try {
@@ -343,6 +1056,14 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   }
 
   Future<void> _deleteTransfer(Transport transfer) async {
+    print(
+      'DELETE TRANSFER CALLED: '
+      'id=${transfer.id}, '
+      'parent=${transfer.parentTransportId}, '
+      'direction=${transfer.direction}, '
+      'type=${transfer.type}',
+    );
+
     if (transfer.id == null) {
       return;
     }
@@ -368,6 +1089,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           outboundTransferChoice = null;
         }
       });
+
+      print(
+        'AFTER DELETE LOCAL: '
+        'returnTransfers=${selectedReturnTransports.map((item) => 'id=${item.id}, parent=${item.parentTransportId}, type=${item.type}').toList()} '
+        'outboundTransfers=${selectedOutboundTransports.map((item) => 'id=${item.id}, parent=${item.parentTransportId}, type=${item.type}').toList()}',
+      );
 
       await loadBudget();
     } catch (e) {
@@ -403,6 +1130,173 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     return Icons.directions_transit;
   }
 
+  Widget _buildTransferCard(Transport transport) {
+    final bool isReturn = transport.direction == 'return';
+
+    final String title = isReturn ? 'Hotel → Airport' : 'Airport → Hotel';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.directions_car,
+                    color: Colors.blue,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Transfer',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  '${transport.userPrice} ${transport.userCurrency}',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Text(
+              title,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+
+            const SizedBox(height: 6),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on_outlined, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    transport.departureLocation,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const Padding(
+              padding: EdgeInsets.only(left: 9),
+              child: SizedBox(
+                height: 18,
+                child: VerticalDivider(width: 1, thickness: 1),
+              ),
+            ),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    transport.arrivalLocation,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 16,
+                  color: Colors.grey.shade600,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _formatDate(transport.departureDate),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                const SizedBox(width: 12),
+                Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
+                const SizedBox(width: 6),
+                Text(
+                  transport.departureTime,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    transport.type,
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
+                ),
+                Text(
+                  '${transport.destinationPrice} '
+                  '${transport.destinationCurrency}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  print(
+                    'DELETE BUTTON PRESSED: '
+                    'id=${transport.id}, '
+                    'parent=${transport.parentTransportId}, '
+                    'direction=${transport.direction}',
+                  );
+
+                  _deleteTransfer(transport);
+                },
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: const Text(
+                  'Delete transfer',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget buildTransportCard(
     Transport transport, {
     required VoidCallback onChange,
@@ -410,8 +1304,18 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     String? transferChoice,
     VoidCallback? onAddTransfer,
   }) {
+    print(
+      'BUILD TRANSPORT CARD: '
+      'id=${transport.id}, '
+      'direction=${transport.direction}, '
+      'type=${transport.type}, '
+      'transferChoice=$transferChoice',
+    );
     final bool isReturn = transport.direction == 'return';
     final bool isTransfer = transport.type.startsWith('Transfer');
+    if (isTransfer) {
+      return _buildTransferCard(transport);
+    }
 
     final String departureCity = isReturn
         ? widget.trip['destination']
@@ -614,7 +1518,16 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: OutlinedButton.icon(
-                          onPressed: () => _deleteTransfer(transport),
+                          onPressed: () {
+                            print(
+                              'DELETE BUTTON PRESSED: '
+                              'id=${transport.id}, '
+                              'parent=${transport.parentTransportId}, '
+                              'direction=${transport.direction}',
+                            );
+
+                            _deleteTransfer(transport);
+                          },
                           icon: const Icon(
                             Icons.delete_outline,
                             color: Colors.red,
@@ -646,13 +1559,35 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       final hotels = await HotelService.getHotels(tripId);
 
+      for (final hotel in hotels) {
+        print(
+          'HOTEL: id=${hotel.id}, '
+          'name=${hotel.name}, '
+          'stopId=${hotel.stopId}, '
+          'lat=${hotel.latitude}, '
+          'lng=${hotel.longitude}',
+        );
+      }
+
       if (!mounted) return;
 
-      setState(() {
-        if (hotels.isNotEmpty) {
-          selectedHotel = hotels.last;
-        }
+      final mainHotel = hotels.where((hotel) => hotel.stopId == null).toList();
 
+      final stopHotels = <int, Hotel>{};
+
+      for (final hotel in hotels) {
+        if (hotel.stopId != null) {
+          stopHotels[hotel.stopId!] = hotel;
+        }
+      }
+
+      setState(() {
+        // Temporary legacy hotel.
+        // It is not displayed as a separate hotel section anymore.
+        // It is still required by the current transfer flow.
+        selectedHotel = mainHotel.isNotEmpty ? mainHotel.last : null;
+
+        selectedStopHotels = stopHotels;
         isLoadingHotel = false;
       });
     } catch (e) {
@@ -664,11 +1599,159 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Future<void> chooseHotel() async {
-    final result = await Navigator.push<Hotel>(
+  bool _hasTransferForTransport(Transport transport) {
+    final transports = transport.direction == 'return'
+        ? selectedReturnTransports
+        : selectedOutboundTransports;
+
+    final matchingTransfers = transports
+        .where(
+          (item) =>
+              item.type.startsWith('Transfer') &&
+              item.parentTransportId == transport.id,
+        )
+        .toList();
+
+    print(
+      'CHECK TRANSFER: '
+      'transportId=${transport.id}, '
+      'direction=${transport.direction}, '
+      'matchingTransfers=${matchingTransfers.map((item) => 'id=${item.id}, parent=${item.parentTransportId}').toList()}',
+    );
+
+    return matchingTransfers.isNotEmpty;
+  }
+
+  Future<void> _offerTransfersForSelectedHotels({String? direction}) async {
+    await loadSelectedHotel();
+
+    if (!mounted) {
+      return;
+    }
+
+    final hotels = selectedStopHotels.values.toList();
+
+    if (hotels.isEmpty) {
+      return;
+    }
+
+    for (final hotel in hotels) {
+      if (!mounted) {
+        return;
+      }
+
+      await _offerTransfersForHotel(hotel, direction: direction);
+    }
+  }
+
+  Future<void> _offerTransfersForHotel(Hotel hotel, {String? direction}) async {
+    await loadSelectedTransports();
+
+    if (!mounted) {
+      return;
+    }
+
+    final outbound = selectedOutboundTransports
+        .where((transport) => !transport.type.startsWith('Transfer'))
+        .toList();
+
+    final returns = selectedReturnTransports
+        .where((transport) => !transport.type.startsWith('Transfer'))
+        .toList();
+
+    List<Transport> relevantOutbound = [];
+    List<Transport> relevantReturns = [];
+
+    // Если это гостиница конкретного TripStop,
+    // связываем трансферы именно с этим stop.
+    if (hotel.stopId != null) {
+      final stop = tripStops.cast<TripStop?>().firstWhere(
+        (item) => item?.id == hotel.stopId,
+        orElse: () => null,
+      );
+
+      if (stop != null) {
+        relevantOutbound = outbound.where((transport) {
+          final arrivalDate = DateTime.tryParse(transport.arrivalDate);
+
+          if (arrivalDate == null) {
+            return false;
+          }
+
+          return !arrivalDate.isAfter(stop.endDate) &&
+              !arrivalDate.isBefore(stop.startDate);
+        }).toList();
+
+        relevantReturns = returns.where((transport) {
+          final departureDate = DateTime.tryParse(transport.departureDate);
+
+          if (departureDate == null) {
+            return false;
+          }
+
+          return !departureDate.isBefore(stop.startDate) &&
+              !departureDate.isAfter(stop.endDate);
+        }).toList();
+      }
+    } else {
+      // Legacy / single-hotel trip:
+      // гостиница относится ко всему путешествию.
+      relevantOutbound = outbound;
+      relevantReturns = returns;
+    }
+
+    // Сначала предлагаем трансфер аэропорт → отель.
+    if (direction == null || direction == 'outbound') {
+      for (final transport in relevantOutbound) {
+        if (_hasTransferForTransport(transport)) {
+          continue;
+        }
+
+        final addTransfer = await TripDialogs.showAddTransferDialog(
+          context,
+          isReturn: false,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        if (addTransfer) {
+          await _addTransfer(parentTransport: transport);
+          await loadSelectedTransports();
+        }
+      }
+    }
+
+    // Затем предлагаем трансфер отель → аэропорт.
+    if (direction == null || direction == 'return') {
+      for (final transport in relevantReturns) {
+        if (_hasTransferForTransport(transport)) {
+          continue;
+        }
+
+        final addTransfer = await TripDialogs.showAddTransferDialog(
+          context,
+          isReturn: true,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        if (addTransfer) {
+          await _addTransfer(parentTransport: transport);
+          await loadSelectedTransports();
+        }
+      }
+    }
+  }
+
+  Future<void> chooseStopHotel(TripStop stop) async {
+    final result = await Navigator.push<Object?>(
       context,
       MaterialPageRoute(
-        builder: (context) => HotelOptionsPage(trip: widget.trip),
+        builder: (context) => HotelOptionsPage(trip: widget.trip, stop: stop),
       ),
     );
 
@@ -676,29 +1759,88 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       return;
     }
 
-    await _saveSelectedHotel(result);
+    if (result is bool && result) {
+      await loadSelectedHotel();
+      await loadSelectedTransports();
+      await loadBudget();
+
+      return;
+    }
+
+    if (result is! Hotel) {
+      return;
+    }
+
+    setState(() {
+      selectedStopHotels[stop.id] = result;
+    });
+
+    await loadSelectedTransports();
+    await loadTripStops();
+    await loadBudget();
+
+    if (!mounted) {
+      return;
+    }
+
+    await _offerTransfersForHotel(result);
   }
 
-  Future<void> _saveSelectedHotel(Hotel hotel) async {
+  Future<void> openStopHotelDetails(TripStop stop) async {
+    final hotel = selectedStopHotels[stop.id];
+
+    if (hotel == null) {
+      return;
+    }
+
+    final stopIndex = tripStops.indexWhere((item) => item.id == stop.id);
+
+    final TripStop? nextStop =
+        stopIndex >= 0 && stopIndex + 1 < tripStops.length
+        ? tripStops[stopIndex + 1]
+        : null;
+
+    final result = await Navigator.push<Object?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HotelDetailsPage(
+          hotel: hotel,
+          trip: widget.trip,
+          stop: stop,
+          nextStop: nextStop,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) {
+      return;
+    }
+
+    if (result is bool && result) {
+      await loadSelectedHotel();
+      await loadSelectedTransports();
+      await loadBudget();
+
+      return;
+    }
+
+    if (result is! Hotel) {
+      return;
+    }
+
     final tripId = widget.trip['id'];
 
     try {
-      if (selectedHotel?.id != null) {
-        await HotelService.deleteHotel(
-          tripId: tripId,
-          hotelId: selectedHotel!.id!,
-        );
-      }
-
       final savedHotel = await HotelService.createHotel(
         tripId: tripId,
-        hotel: hotel,
+        hotel: result,
+        stopId: stop.id,
       );
 
       if (!mounted) return;
 
       setState(() {
-        selectedHotel = savedHotel;
+        selectedStopHotels[stop.id] = savedHotel;
       });
 
       await loadBudget();
@@ -706,33 +1848,121 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Hotel saved')));
+          .showSnackBar(const SnackBar(content: Text('Hotel updated')));
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to save hotel: $e')));
+          .showSnackBar(SnackBar(content: Text('Failed to update hotel: $e')));
     }
   }
 
-  Future<void> openHotelDetails() async {
-    if (selectedHotel == null) {
-      return;
-    }
-
-    final result = await Navigator.push<Hotel>(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            HotelDetailsPage(hotel: selectedHotel!, trip: widget.trip),
-      ),
+  Future<void> _deleteTransfersForStop(TripStop stop) async {
+    print(
+      'DELETE TRANSFERS FOR STOP: '
+      'stopId=${stop.id}, '
+      'start=${stop.startDate}, '
+      'end=${stop.endDate}',
     );
 
-    if (result == null || !mounted) {
+    await loadSelectedTransports();
+
+    if (!mounted) {
       return;
     }
 
-    await _saveSelectedHotel(result);
+    final allTransports = [
+      ...selectedOutboundTransports,
+      ...selectedReturnTransports,
+    ];
+
+    print(
+      'ALL TRANSPORTS: '
+      '${allTransports.map((transport) => 'id=${transport.id}, '
+          'type=${transport.type}, '
+          'direction=${transport.direction}, '
+          'parent=${transport.parentTransportId}, '
+          'departure=${transport.departureDate}, '
+          'arrival=${transport.arrivalDate}').toList()}',
+    );
+
+    final flights = allTransports.where((transport) {
+      if (transport.type.startsWith('Transfer')) {
+        return false;
+      }
+
+      if (transport.direction == 'outbound') {
+        final arrivalDate = DateTime.tryParse(transport.arrivalDate);
+
+        if (arrivalDate == null) {
+          return false;
+        }
+
+        return !arrivalDate.isBefore(stop.startDate) &&
+            !arrivalDate.isAfter(stop.endDate);
+      }
+
+      if (transport.direction == 'return') {
+        final departureDate = DateTime.tryParse(transport.departureDate);
+
+        if (departureDate == null) {
+          return false;
+        }
+
+        return !departureDate.isBefore(stop.startDate) &&
+            !departureDate.isAfter(stop.endDate);
+      }
+
+      return false;
+    }).toList();
+
+    print(
+      'FLIGHTS FOR STOP: '
+      '${flights.map((transport) => 'id=${transport.id}, '
+          'direction=${transport.direction}, '
+          'departure=${transport.departureDate}, '
+          'arrival=${transport.arrivalDate}').toList()}',
+    );
+
+    final flightIds = flights
+        .where((transport) => transport.id != null)
+        .map((transport) => transport.id!)
+        .toSet();
+
+    final transfers = allTransports.where((transport) {
+      return transport.type.startsWith('Transfer') &&
+          transport.parentTransportId != null &&
+          flightIds.contains(transport.parentTransportId);
+    }).toList();
+
+    print(
+      'TRANSFERS FOR STOP: '
+      '${transfers.map((transfer) => 'id=${transfer.id}, '
+          'parent=${transfer.parentTransportId}, '
+          'type=${transfer.type}').toList()}',
+    );
+
+    for (final transfer in transfers) {
+      if (transfer.id == null) {
+        continue;
+      }
+
+      print(
+        'DELETE TRANSFER: '
+        'id=${transfer.id}, '
+        'parent=${transfer.parentTransportId}',
+      );
+
+      await TransportService.deleteTransport(
+        tripId: widget.trip['id'],
+        transportId: transfer.id!,
+      );
+    }
+
+    if (transfers.isNotEmpty) {
+      await loadSelectedTransports();
+      await loadBudget();
+    }
   }
 
   // =========================
@@ -999,6 +2229,225 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     );
   }
 
+  Widget buildTripStopsSection() {
+    if (isLoadingTripStops) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Cities',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: addTripStop,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add city'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            if (tripStops.isEmpty)
+              const Text(
+                'No additional cities',
+                style: TextStyle(color: Colors.grey),
+              ),
+
+            ...tripStops.asMap().entries.map((entry) {
+              final index = entry.key;
+              final stop = entry.value;
+
+              final hotel = selectedStopHotels[stop.id];
+
+              TripStop? nextStop;
+
+              if (index + 1 < tripStops.length) {
+                nextStop = tripStops[index + 1];
+              }
+
+              final nextHotel = nextStop == null
+                  ? null
+                  : selectedStopHotels[nextStop.id];
+
+              final bool hasIntercityTransfer =
+                  hotel != null &&
+                  nextStop != null &&
+                  nextHotel != null &&
+                  stop.city.trim().toLowerCase() !=
+                      nextStop!.city.trim().toLowerCase();
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.location_city),
+                        title: Text(stop.city),
+                        subtitle: Text(
+                          '${stop.startDate.day.toString().padLeft(2, '0')}.'
+                          '${stop.startDate.month.toString().padLeft(2, '0')}.'
+                          '${stop.startDate.year}'
+                          ' — '
+                          '${stop.endDate.day.toString().padLeft(2, '0')}.'
+                          '${stop.endDate.month.toString().padLeft(2, '0')}.'
+                          '${stop.endDate.year}',
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () async {
+                            await TripStopService.deleteTripStop(
+                              tripId: widget.trip['id'],
+                              stopId: stop.id,
+                            );
+
+                            await loadTripStops();
+                            await loadSelectedHotel();
+                            await loadSelectedTransports();
+                            await loadBudget();
+                          },
+                        ),
+                      ),
+
+                      const Divider(),
+
+                      if (hotel == null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => chooseStopHotel(stop),
+                            icon: const Icon(Icons.hotel_outlined),
+                            label: Text('Choose hotel in ${stop.city}'),
+                          ),
+                        )
+                      else
+                        InkWell(
+                          onTap: () => openStopHotelDetails(stop),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.only(top: 4),
+                                  child: Icon(Icons.hotel),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          hotel.name,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${hotel.userPrice.toStringAsFixed(2)} '
+                                          '${hotel.userCurrency}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(width: 8),
+
+                                Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    OutlinedButton(
+                                      onPressed: () => chooseStopHotel(stop),
+                                      style: OutlinedButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 8,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text('Change'),
+                                    ),
+
+                                    if (hasIntercityTransfer) ...[
+                                      const SizedBox(height: 6),
+                                      SizedBox(
+                                        width: 40,
+                                        height: 40,
+                                        child: OutlinedButton(
+                                          onPressed: () =>
+                                              openStopHotelDetails(stop),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.all(0),
+                                            minimumSize: const Size(40, 40),
+                                            side: BorderSide(
+                                              color: Colors.grey.shade400,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.directions_car_outlined,
+                                            color: Colors.grey,
+                                            size: 24,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   // =========================
   // BUILD
   // =========================
@@ -1011,16 +2460,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         .where((transport) => !transport.type.startsWith('Transfer'))
         .toList();
 
-    final outboundTransfers = selectedOutboundTransports
-        .where((transport) => transport.type.startsWith('Transfer'))
-        .toList();
-
     final returnMainTransport = selectedReturnTransports
         .where((transport) => !transport.type.startsWith('Transfer'))
-        .toList();
-
-    final returnTransfers = selectedReturnTransports
-        .where((transport) => transport.type.startsWith('Transfer'))
         .toList();
 
     return Scaffold(
@@ -1050,6 +2491,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
             const SizedBox(height: 24),
 
+            buildTripStopsSection(),
+
+            const SizedBox(height: 16),
+
             // =========================
             // OUTBOUND TRANSPORT
             // =========================
@@ -1067,18 +2512,26 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseOutboundTransport,
-                  transferChoice: outboundTransferChoice,
+                  transferChoice: _hasTransferForTransport(transport)
+                      ? 'Transfer'
+                      : null,
                   onAddTransfer: () => _addTransfer(parentTransport: transport),
                   onTap: () async {
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TransportDetailsPage(
-                          trip: widget.trip,
-                          transport: transport,
-                          hasSelectedHotel: selectedHotel != null,
-                          selectedHotel: selectedHotel,
-                        ),
+                        builder: (context) {
+                          final hotel = _getHotelForTransport(transport);
+
+                          return TransportDetailsPage(
+                            trip: widget.trip,
+                            transport: transport,
+                            hasSelectedHotel: hotel != null,
+                            selectedHotel: hotel,
+                            onAddTransfer: () =>
+                                _addTransfer(parentTransport: transport),
+                          );
+                        },
                       ),
                     );
 
@@ -1094,20 +2547,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 onPressed: chooseOutboundTransport,
                 child: const Text('Choose outbound transport'),
               ),
-
-            if (outboundTransfers.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              ...outboundTransfers.map(
-                (transfer) => buildTransportCard(
-                  transfer,
-                  onChange: () {},
-                  onTap: () {},
-                  transferChoice: transfer.direction == 'return'
-                      ? returnTransferChoice
-                      : outboundTransferChoice,
-                ),
-              ),
-            ],
 
             const SizedBox(height: 24),
 
@@ -1128,18 +2567,24 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                 (transport) => buildTransportCard(
                   transport,
                   onChange: chooseReturnTransport,
-                  transferChoice: returnTransferChoice,
+                  transferChoice: _hasTransferForTransport(transport)
+                      ? 'Transfer'
+                      : null,
                   onAddTransfer: () => _addTransfer(parentTransport: transport),
                   onTap: () async {
                     final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TransportDetailsPage(
-                          trip: widget.trip,
-                          transport: transport,
-                          hasSelectedHotel: selectedHotel != null,
-                          selectedHotel: selectedHotel,
-                        ),
+                        builder: (context) {
+                          final hotel = _getHotelForTransport(transport);
+
+                          return TransportDetailsPage(
+                            trip: widget.trip,
+                            transport: transport,
+                            hasSelectedHotel: hotel != null,
+                            selectedHotel: hotel,
+                          );
+                        },
                       ),
                     );
 
@@ -1154,252 +2599,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               ElevatedButton(
                 onPressed: chooseReturnTransport,
                 child: const Text('Choose return transport'),
-              ),
-
-            if (returnTransfers.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              ...returnTransfers.map(
-                (transfer) => buildTransportCard(
-                  transfer,
-                  onChange: () {},
-                  onTap: () {},
-                  transferChoice: transfer.direction == 'return'
-                      ? returnTransferChoice
-                      : outboundTransferChoice,
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-
-            // =========================
-            // HOTEL
-            // =========================
-            const Text(
-              'Hotel',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            if (isLoadingHotel)
-              const Center(child: CircularProgressIndicator())
-            else if (selectedHotel != null)
-              Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                elevation: 2,
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: InkWell(
-                  onTap: openHotelDetails,
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.hotel,
-                            color: Colors.blue,
-                            size: 28,
-                          ),
-                        ),
-
-                        const SizedBox(width: 16),
-
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          selectedHotel!.name,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-
-                                        const SizedBox(height: 6),
-
-                                        Text(
-                                          selectedHotel!.city,
-                                          style: const TextStyle(fontSize: 15),
-                                        ),
-
-                                        const SizedBox(height: 4),
-
-                                        Text(
-                                          selectedHotel!.address,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  const SizedBox(width: 12),
-
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        '${selectedHotel!.userPrice} '
-                                        '${selectedHotel!.userCurrency}',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 2),
-
-                                      Text(
-                                        '${selectedHotel!.destinationPrice} '
-                                        '${selectedHotel!.destinationCurrency}',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 8),
-
-                                      OutlinedButton(
-                                        onPressed: chooseHotel,
-                                        child: const Text('Change'),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-
-                              const SizedBox(height: 12),
-
-                              Text(
-                                '${selectedHotel!.checkIn.day.toString().padLeft(2, '0')}.'
-                                '${selectedHotel!.checkIn.month.toString().padLeft(2, '0')}.'
-                                '${selectedHotel!.checkIn.year}'
-                                ' → '
-                                '${selectedHotel!.checkOut.day.toString().padLeft(2, '0')}.'
-                                '${selectedHotel!.checkOut.month.toString().padLeft(2, '0')}.'
-                                '${selectedHotel!.checkOut.year}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-
-                              const SizedBox(height: 4),
-
-                              Text(
-                                '${selectedHotel!.nights} '
-                                '${selectedHotel!.nights == 1 ? 'night' : 'nights'}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-
-                              if (selectedHotel!.rateOptions.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-
-                                Text(
-                                  selectedHotel!.rateOptions.first.roomName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-
-                                const SizedBox(height: 4),
-
-                                if (selectedHotel!
-                                    .rateOptions
-                                    .first
-                                    .boardName
-                                    .isNotEmpty)
-                                  Text(
-                                    selectedHotel!.rateOptions.first.boardName,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  ),
-
-                                const SizedBox(height: 4),
-
-                                Row(
-                                  children: [
-                                    Icon(
-                                      selectedHotel!
-                                              .rateOptions
-                                              .first
-                                              .refundable
-                                          ? Icons.check_circle_outline
-                                          : Icons.cancel_outlined,
-                                      size: 16,
-                                      color:
-                                          selectedHotel!
-                                              .rateOptions
-                                              .first
-                                              .refundable
-                                          ? Colors.green
-                                          : Colors.red,
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      selectedHotel!
-                                              .rateOptions
-                                              .first
-                                              .refundable
-                                          ? 'Refundable'
-                                          : 'Non-refundable',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color:
-                                            selectedHotel!
-                                                .rateOptions
-                                                .first
-                                                .refundable
-                                            ? Colors.green
-                                            : Colors.red,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              ElevatedButton(
-                onPressed: chooseHotel,
-                child: const Text('Choose hotel'),
               ),
 
             const SizedBox(height: 24),

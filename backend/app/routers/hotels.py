@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.trip import Trip
+from app.models.trip_stop import TripStop
 from app.schemas.trip import HotelCreate
 from app.services.hotels import (
     generate_hotel_options,
@@ -30,6 +31,7 @@ def get_db():
 @router.get("/{trip_id}/hotels/options")
 def get_hotel_options(
     trip_id: int,
+    stop_id: int | None = None,
     refresh: bool = False,
     page: int = 1,
     limit: int = 50,
@@ -45,17 +47,37 @@ def get_hotel_options(
             detail="Trip not found",
         )
 
+    stop = None
+
+    if stop_id is not None:
+        stop = (
+            db.query(TripStop)
+            .filter(
+                TripStop.id == stop_id,
+                TripStop.trip_id == trip_id,
+            )
+            .first()
+        )
+
+        if stop is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Trip stop not found",
+            )
+
     result = generate_hotel_options(
         trip,
         db,
         refresh=refresh,
         page=page,
         limit=limit,
+        stop=stop,
     )
 
     return {
         "trip_id": trip.id,
-        "destination": trip.destination,
+        "destination": stop.city if stop else trip.destination,
+        "stop_id": stop.id if stop else None,
         **result,
     }
 

@@ -110,11 +110,23 @@ class _TransferSelectionPageState extends State<TransferSelectionPage> {
           );
 
       final response = await http.get(uri);
+      print('TRANSFER RESPONSE STATUS: ${response.statusCode}');
+      print('TRANSFER RESPONSE BODY: ${response.body}');
 
       if (response.statusCode != 200) {
-        throw Exception(
-          'Server error: ${response.statusCode}\n${response.body}',
-        );
+        final body = response.body;
+
+        final isUnsupportedTerminal =
+            body.contains('terminal') &&
+            body.contains('not available our catalogue');
+
+        if (isUnsupportedTerminal) {
+          throw Exception(
+            'Transfers are not available for airport $airportCode.',
+          );
+        }
+
+        throw Exception('Server error: ${response.statusCode}\n$body');
       }
 
       final data = jsonDecode(response.body);

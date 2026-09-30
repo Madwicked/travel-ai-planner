@@ -69,6 +69,7 @@ class HotelRate {
 class Hotel {
   final int? id;
   final int? tripId;
+  final int? stopId;
 
   final String hotelCode;
 
@@ -106,6 +107,7 @@ class Hotel {
   Hotel({
     this.id,
     this.tripId,
+    this.stopId,
     required this.hotelCode,
     required this.name,
     required this.city,
@@ -139,6 +141,7 @@ class Hotel {
     return Hotel(
       id: json['id'],
       tripId: json['trip_id'],
+      stopId: json['stop_id'],
       hotelCode: json['hotel_code']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       city: json['city']?.toString() ?? '',
@@ -183,6 +186,7 @@ class Hotel {
     return Hotel(
       id: id,
       tripId: tripId,
+      stopId: stopId,
       hotelCode: hotelCode,
       name: name,
       city: city,

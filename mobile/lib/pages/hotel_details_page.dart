@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/trip_stop.dart';
+
 import 'hotel_rates_page.dart';
 import 'hotel_options_page.dart';
 import '../models/hotel.dart';
@@ -10,8 +12,16 @@ import '../widgets/location_map.dart';
 class HotelDetailsPage extends StatefulWidget {
   final Hotel hotel;
   final Map<String, dynamic> trip;
+  final TripStop? stop;
+  final TripStop? nextStop;
 
-  const HotelDetailsPage({super.key, required this.hotel, required this.trip});
+  const HotelDetailsPage({
+    super.key,
+    required this.hotel,
+    required this.trip,
+    this.stop,
+    this.nextStop,
+  });
 
   @override
   State<HotelDetailsPage> createState() => _HotelDetailsPageState();
@@ -23,7 +33,9 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
   bool isLoadingRoomDetails = false;
   String? roomDetailsError;
 
-  Hotel get hotel => widget.hotel;
+  Hotel? _currentHotel;
+
+  Hotel get hotel => _currentHotel ?? widget.hotel;
 
   Map<String, dynamic> get trip => widget.trip;
 
@@ -114,7 +126,6 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
     }
 
     if (hotel.rateOptions.isEmpty) {
-      print('ROOM DETAILS STOP: rateOptions is empty');
       return;
     }
 
@@ -460,10 +471,142 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
     );
   }
 
+  Widget _buildIntercityTransferCard() {
+    final currentStop = widget.stop;
+    final nextStop = widget.nextStop;
+
+    if (currentStop == null || nextStop == null) {
+      return const SizedBox.shrink();
+    }
+
+    final hasIntercityTransfer =
+        currentStop.city.trim().toLowerCase() !=
+        nextStop.city.trim().toLowerCase();
+
+    if (!hasIntercityTransfer) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.directions_car,
+                    color: Colors.blue,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Transfer',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 14),
+
+            Text(
+              'Hotel → Hotel',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+
+            const SizedBox(height: 6),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on_outlined, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    currentStop.city,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const Padding(
+              padding: EdgeInsets.only(left: 9),
+              child: SizedBox(
+                height: 18,
+                child: VerticalDivider(width: 1, thickness: 1),
+              ),
+            ),
+
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    nextStop.city,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 16,
+                  color: Colors.grey.shade600,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _formatDate(currentStop.endDate),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Text(
+              'Intercity transfer',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _changeHotel() async {
     final result = await Navigator.push<Hotel>(
       context,
-      MaterialPageRoute(builder: (_) => HotelOptionsPage(trip: trip)),
+      MaterialPageRoute(
+        builder: (_) => HotelOptionsPage(trip: trip, stop: widget.stop),
+      ),
     );
 
     if (result == null || !mounted) {
@@ -499,7 +642,30 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
       rateOptions: updatedRates,
     );
 
-    Navigator.pop(context, updatedHotel);
+    try {
+      final savedHotel = await HotelService.createHotel(
+        tripId: trip['id'],
+        hotel: updatedHotel,
+        stopId: widget.stop?.id,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _currentHotel = savedHotel;
+      });
+
+      await _loadRoomDetails();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to update room: $e')));
+    }
   }
 
   Future<void> _deleteHotel() async {
@@ -558,6 +724,9 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
   @override
   void initState() {
     super.initState();
+
+    _currentHotel = widget.hotel;
+
     _loadRoomDetails();
   }
 
@@ -646,11 +815,11 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
 
             const SizedBox(height: 20),
 
-            _buildSelectedRateCard(),
-
-            if (hotel.rateOptions.isNotEmpty) const SizedBox(height: 20),
-
             _buildPriceCard(),
+
+            const SizedBox(height: 20),
+
+            _buildIntercityTransferCard(),
 
             const SizedBox(height: 20),
 

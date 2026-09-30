@@ -3,8 +3,10 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
@@ -52,6 +54,8 @@ class MockTransferProvider(TransferProvider):
 class RealTransferProvider(TransferProvider):
     BASE_URL = "https://api.test.hotelbeds.com"
 
+    TERMINAL_CACHE_TTL = timedelta(hours=1)
+
     def __init__(self):
         self.api_key = os.getenv(
             "HOTELBEDS_TRANSFER_API_KEY"
@@ -70,6 +74,8 @@ class RealTransferProvider(TransferProvider):
                 "HOTELBEDS_TRANSFER_SECRET is not set"
             )
 
+        self._terminal_cache = {}
+
     def _create_signature(self):
         timestamp = str(int(time.time()))
 
@@ -82,6 +88,153 @@ class RealTransferProvider(TransferProvider):
         return hashlib.sha256(
             value.encode("utf-8")
         ).hexdigest()
+
+    def _request_terminals(
+        self,
+        *,
+        codes,
+        language,
+    ):
+        query = urllib.parse.urlencode({
+            "fields": "ALL",
+            "language": language,
+            "codes": codes,
+        })
+
+        url = (
+            f"{self.BASE_URL}"
+            f"/transfer-cache-api/1.0/locations/terminals"
+            f"?{query}"
+        )
+
+        request = urllib.request.Request(
+            url,
+            method="GET",
+            headers={
+                "Api-key": self.api_key,
+                "X-Signature": self._create_signature(),
+                "Accept": "application/json",
+            },
+        )
+
+        try:
+            with urllib.request.urlopen(
+                    request,
+                    timeout=30,
+            ) as response:
+                response_data = response.read()
+
+                print(
+                    "HOTELBEDS TERMINALS RESPONSE STATUS: "
+                    f"{response.status}"
+                )
+
+                if response.status == 204:
+                    print(
+                        "HOTELBEDS TERMINAL NOT FOUND: "
+                        f"{codes}"
+                    )
+                    return []
+
+                response_body = response_data.decode(
+                    "utf-8",
+                    errors="replace",
+                )
+
+                print(
+                    "HOTELBEDS TERMINALS RESPONSE BODY: "
+                    f"{response_body}"
+                )
+
+                return json.loads(response_body)
+
+        except urllib.error.HTTPError as error:
+            response_data = error.read()
+
+            response_body = response_data.decode(
+                "utf-8",
+                errors="replace",
+            )
+
+            raise RuntimeError(
+                f"Hotelbeds Transfer Cache API error "
+                f"{error.code}: {response_body}"
+            ) from error
+
+        except urllib.error.URLError as error:
+            raise RuntimeError(
+                "Hotelbeds Transfer Cache API connection error: "
+                f"{error.reason}"
+            ) from error
+
+    def _is_iata_terminal_supported(
+        self,
+        *,
+        iata_code,
+        language,
+    ):
+        code = iata_code.upper()
+
+        cached = self._terminal_cache.get(code)
+
+        if cached is not None:
+            cached_at, supported = cached
+
+            if (
+                datetime.utcnow() - cached_at
+                < self.TERMINAL_CACHE_TTL
+            ):
+                return supported
+
+        terminals = self._request_terminals(
+            codes=code,
+            language=language,
+        )
+
+        supported = any(
+            str(terminal.get("code", "")).upper()
+            == code
+            for terminal in terminals
+            if isinstance(terminal, dict)
+        )
+
+        self._terminal_cache[code] = (
+            datetime.utcnow(),
+            supported,
+        )
+
+        print(
+            "HOTELBEDS TERMINAL CHECK: "
+            f"{code} -> "
+            f"{'SUPPORTED' if supported else 'NOT SUPPORTED'}"
+        )
+
+        return supported
+
+    def _is_route_supported(
+        self,
+        *,
+        from_type,
+        from_code,
+        to_type,
+        to_code,
+        language,
+    ):
+        if from_type.upper() == "IATA":
+            if not self._is_iata_terminal_supported(
+                iata_code=from_code,
+                language=language,
+            ):
+                return False
+
+        if to_type.upper() == "IATA":
+            if not self._is_iata_terminal_supported(
+                iata_code=to_code,
+                language=language,
+            ):
+                return False
+
+        return True
 
     def _request(
         self,
@@ -159,7 +312,6 @@ class RealTransferProvider(TransferProvider):
                 errors="replace",
             )
 
-
             raise RuntimeError(
                 f"Hotelbeds Transfers API error "
                 f"{error.code}: {response_body}"
@@ -167,7 +319,7 @@ class RealTransferProvider(TransferProvider):
 
         except urllib.error.URLError as error:
             raise RuntimeError(
-                f"Hotelbeds Transfers API connection error: "
+                "Hotelbeds Transfers API connection error: "
                 f"{error.reason}"
             ) from error
 
@@ -266,6 +418,21 @@ class RealTransferProvider(TransferProvider):
         inbound=None,
         language="en",
     ):
+        if not self._is_route_supported(
+            from_type=from_type,
+            from_code=from_code,
+            to_type=to_type,
+            to_code=to_code,
+            language=language,
+        ):
+            print(
+                "HOTELBEDS TRANSFER ROUTE NOT SUPPORTED: "
+                f"{from_type}/{from_code} -> "
+                f"{to_type}/{to_code}"
+            )
+
+            return []
+
         data = self._request(
             from_type=from_type,
             from_code=from_code,
@@ -278,7 +445,6 @@ class RealTransferProvider(TransferProvider):
             inbound=inbound,
             language=language,
         )
-
 
         return self._build_options(data)
 

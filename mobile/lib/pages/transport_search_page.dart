@@ -1387,15 +1387,6 @@ class _TransportSearchPage extends State<TransportSearchPage> {
                   const SizedBox(height: 4),
 
                   Text(
-                    '${option.destinationPrice.toStringAsFixed(2)} '
-                    '${option.destinationCurrency}',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                  ),
-
-                  const SizedBox(height: 4),
-
-                  Text(
                     '${option.price.toStringAsFixed(2)} '
                     '${option.currency}',
                     textAlign: TextAlign.right,

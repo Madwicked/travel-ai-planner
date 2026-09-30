@@ -28,6 +28,7 @@ class TripTransport(Base):
     segments = Column(JSON, nullable=True)
     stops = Column(Integer, nullable=True)
     layovers = Column(JSON, nullable=True)
+    transfer_data = Column(JSON, nullable=True)
     transport_duration = Column(String(50), nullable=False)
 
     departure_date = Column(Date, nullable=False)

@@ -53,22 +53,28 @@ class FreeAirportDbProvider(AirportProvider):
 
         for airport in data.get("data", []):
             if (
-                    airport.get("iata")
-                    and airport["iata"].upper()
-                    == iata_code.upper()
-                    and airport.get("type")
-                    in {"large_airport", "medium_airport"}
+                airport.get("iata")
+                and airport["iata"].upper() == iata_code.upper()
+                and airport.get("type")
+                in {"large_airport", "medium_airport"}
             ):
                 return self._format_airport(airport)
 
         return None
 
-    def find_airports(self, city, latitude, longitude):
+    def find_airports(
+        self,
+        city,
+        latitude,
+        longitude,
+        country=None,
+    ):
         if latitude is not None and longitude is not None:
             airports = self._find_nearby(
                 city=city,
                 latitude=latitude,
                 longitude=longitude,
+                country=country,
             )
 
             if airports:
@@ -78,9 +84,16 @@ class FreeAirportDbProvider(AirportProvider):
             city=city,
             latitude=latitude,
             longitude=longitude,
+            country=country,
         )
 
-    def _find_nearby(self, city, latitude, longitude):
+    def _find_nearby(
+        self,
+        city,
+        latitude,
+        longitude,
+        country=None,
+    ):
         params = urllib.parse.urlencode({
             "lat": latitude,
             "lng": longitude,
@@ -106,36 +119,87 @@ class FreeAirportDbProvider(AirportProvider):
         airports = [
             airport
             for airport in data.get("data", [])
-            if airport.get("iata")
-            and airport.get("type")
-            in {"large_airport", "medium_airport"}
+            if (
+                airport.get("iata")
+                and airport.get("type")
+                in {"large_airport", "medium_airport"}
+            )
         ]
 
         if not airports:
             return []
 
-        city_lower = city.lower()
+        if country:
+            country_lower = country.strip().casefold()
+
+            airports = [
+                airport
+                for airport in airports
+                if (
+                    airport.get("country_name")
+                    and airport["country_name"].strip().casefold()
+                    == country_lower
+                )
+            ]
+
+        if not airports:
+            return []
+
+        city_lower = city.strip().casefold()
 
         city_related_airports = [
             airport
             for airport in airports
-            if airport.get("municipality")
-               and city_lower in airport["municipality"].lower()
+            if (
+                airport.get("municipality")
+                and airport["municipality"].strip().casefold()
+                == city_lower
+            )
         ]
 
+        # Если аэропорты находятся непосредственно в этом городе,
+        # возвращаем все аэропорты города.
+        #
+        # Например:
+        # Москва -> SVO, DME, VKO, ...
+        # Лондон -> несколько аэропортов Лондона
         if city_related_airports:
-            airports = city_related_airports
+            city_related_airports.sort(
+                key=lambda item: (
+                    0
+                    if item.get("type") == "large_airport"
+                    else 1,
+                    item.get(
+                        "distance_km",
+                        float("inf"),
+                    ),
+                )
+            )
 
+            return [
+                self._format_airport(airport)
+                for airport in city_related_airports
+            ]
+
+        # Если в самом городе подходящего аэропорта нет,
+        # используем только ближайший аэропорт.
+        #
+        # Например:
+        # Novi Sad -> BEG
         airports.sort(
-            key=lambda item: item.get(
-                "distance_km",
-                float("inf"),
+            key=lambda item: (
+                0
+                if item.get("type") == "large_airport"
+                else 1,
+                item.get(
+                    "distance_km",
+                    float("inf"),
+                ),
             )
         )
 
         return [
-            self._format_airport(airport)
-            for airport in airports
+            self._format_airport(airports[0])
         ]
 
     def _find_by_city(
@@ -143,6 +207,7 @@ class FreeAirportDbProvider(AirportProvider):
         city,
         latitude=None,
         longitude=None,
+        country=None,
     ):
         query = urllib.parse.urlencode({
             "q": city,
@@ -167,31 +232,82 @@ class FreeAirportDbProvider(AirportProvider):
         airports = [
             airport
             for airport in data.get("data", [])
-            if airport.get("iata")
-            and airport.get("type")
-            in {"large_airport", "medium_airport"}
+            if (
+                airport.get("iata")
+                and airport.get("type")
+                in {"large_airport", "medium_airport"}
+            )
         ]
 
         if not airports:
             return []
 
-        city_lower = city.lower()
+        if country:
+            country_lower = country.strip().casefold()
+
+            airports = [
+                airport
+                for airport in airports
+                if (
+                    airport.get("country_name")
+                    and airport["country_name"].strip().casefold()
+                    == country_lower
+                )
+            ]
+
+        if not airports:
+            return []
+
+        city_lower = city.strip().casefold()
 
         municipality_matches = [
             airport
             for airport in airports
-            if airport.get("municipality")
-            and airport["municipality"].lower() == city_lower
+            if (
+                airport.get("municipality")
+                and airport["municipality"].strip().casefold()
+                == city_lower
+            )
         ]
 
+        # Если нашли аэропорты непосредственно в городе,
+        # используем все аэропорты города.
         if municipality_matches:
             airports = municipality_matches
+
+        elif latitude is not None and longitude is not None:
+            # Если аэропортов непосредственно в городе нет,
+            # выбираем ближайший.
+            airports.sort(
+                key=lambda item: (
+                    0
+                    if item.get("type") == "large_airport"
+                    else 1,
+                    (
+                        (item.get("latitude", 0) - latitude) ** 2
+                        + (
+                            item.get("longitude", 0)
+                            - longitude
+                        ) ** 2
+                    ),
+                )
+            )
+
+            airports = airports[:1]
 
         if latitude is not None and longitude is not None:
             airports.sort(
                 key=lambda item: (
-                    (item.get("latitude", 0) - latitude) ** 2
-                    + (item.get("longitude", 0) - longitude) ** 2
+                    0
+                    if item.get("type") == "large_airport"
+                    else 1,
+                    (
+                        (item.get("latitude", 0) - latitude) ** 2
+                        + (
+                            item.get("longitude", 0)
+                            - longitude
+                        ) ** 2
+                    ),
                 )
             )
 
@@ -206,6 +322,7 @@ class FreeAirportDbProvider(AirportProvider):
             "name": airport.get("name"),
             "iata_code": airport.get("iata"),
             "city": airport.get("municipality"),
+            "country_code": airport.get("iso_country"),
             "latitude": airport.get("latitude"),
             "longitude": airport.get("longitude"),
         }

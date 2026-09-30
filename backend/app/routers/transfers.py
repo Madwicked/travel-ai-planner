@@ -46,8 +46,16 @@ def get_transfer_options(
             detail=str(error),
         ) from error
 
-    except RuntimeError as error:
+
+
+    except ValueError as error:
+
+        print(f"TRANSFER VALUE ERROR: {error}")
+
         raise HTTPException(
-            status_code=502,
+
+            status_code=400,
+
             detail=str(error),
+
         ) from error

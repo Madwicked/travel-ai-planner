@@ -23,15 +23,17 @@ class RealFlightProvider(TransportProvider):
             raise RuntimeError("FLIGHTAPI_KEY is not set")
 
     def _get_airports(
-        self,
-        city: str,
-        latitude: float | None,
-        longitude: float | None,
+            self,
+            city: str,
+            latitude: float | None,
+            longitude: float | None,
+            country: str | None,
     ):
         airports = airport_provider.find_airports(
             city,
             latitude,
             longitude,
+            country=country,
         )
 
         if not airports:
@@ -493,16 +495,36 @@ class RealFlightProvider(TransportProvider):
             else trip.origin_longitude
         )
 
+        departure_country = (
+            trip.origin_country
+            if departure == trip.origin
+            else trip.destination_country
+        )
+
+        arrival_country = (
+            trip.destination_country
+            if arrival == trip.destination
+            else trip.origin_country
+        )
+
         departure_airports = self._get_airports(
             city=departure,
             latitude=departure_latitude,
             longitude=departure_longitude,
+            country=departure_country,
         )
 
         arrival_airports = self._get_airports(
             city=arrival,
             latitude=arrival_latitude,
             longitude=arrival_longitude,
+            country=arrival_country,
+        )
+
+        print(
+            "FLIGHT API AIRPORTS: "
+            f"departure={[(a['iata_code'], a.get('name')) for a in departure_airports]}, "
+            f"arrival={[(a['iata_code'], a.get('name')) for a in arrival_airports]}"
         )
 
         all_options = []
@@ -512,6 +534,12 @@ class RealFlightProvider(TransportProvider):
             for arrival_airport in arrival_airports:
                 departure_code = departure_airport["iata_code"]
                 arrival_code = arrival_airport["iata_code"]
+
+                print(
+                    "FLIGHT API REQUEST: "
+                    f"{departure_code} -> {arrival_code} "
+                    f"date={date}"
+                )
 
                 try:
                     data = self._request(

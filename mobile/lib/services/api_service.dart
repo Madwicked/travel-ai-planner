@@ -13,6 +13,8 @@ class ApiService {
 
     required String destination,
     required String destinationCountry,
+
+    required String destinationCountryCode,
     required double destinationLatitude,
     required double destinationLongitude,
 
@@ -30,6 +32,7 @@ class ApiService {
 
       'destination': destination,
       'destination_country': destinationCountry,
+      'destination_country_code': destinationCountryCode,
       'destination_latitude': destinationLatitude,
       'destination_longitude': destinationLongitude,
 

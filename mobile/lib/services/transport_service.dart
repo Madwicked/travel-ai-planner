@@ -74,6 +74,8 @@ class TransportService {
 
     final body = {
       'direction': transport.direction,
+      'parent_transport_id': transport.parentTransportId,
+      'transfer_data': transport.transferData,
 
       'transport_type': transport.type,
       'transport_price': transport.price,

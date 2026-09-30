@@ -1,22 +1,60 @@
+from datetime import datetime, timedelta
 from decimal import Decimal
+
+import requests
 
 
 class CurrencyService:
+    RATES_URL = "https://api.frankfurter.dev/v2/rate"
 
-    RATES_TO_EUR = {
-        "EUR": Decimal("1"),
-        "USD": Decimal("0.86"),
-        "GBP": Decimal("1.16"),
-        "RSD": Decimal("0.00853"),
-        "CHF": Decimal("1.09"),
-        "CAD": Decimal("0.63"),
-        "AUD": Decimal("0.57"),
-        "JPY": Decimal("0.0058"),
-        "CNY": Decimal("0.12"),
-        "TRY": Decimal("0.022"),
-        "AED": Decimal("0.234"),
-        "THB": Decimal("0.027"),
-    }
+    CACHE_TTL = timedelta(hours=1)
+
+    _rates_cache: dict[tuple[str, str], tuple[datetime, Decimal]] = {}
+
+    @classmethod
+    def _get_rate(
+        cls,
+        from_currency: str,
+        to_currency: str,
+    ) -> Decimal:
+        cache_key = (
+            from_currency,
+            to_currency,
+        )
+
+        cached = cls._rates_cache.get(cache_key)
+
+        if cached is not None:
+            cached_at, rate = cached
+
+            if datetime.utcnow() - cached_at < cls.CACHE_TTL:
+                return rate
+
+        response = requests.get(
+            f"{cls.RATES_URL}/{from_currency.lower()}/{to_currency.lower()}",
+            timeout=10,
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        rate = data.get("rate")
+
+        if rate is None:
+            raise ValueError(
+                f"Exchange rate not available: "
+                f"{from_currency} -> {to_currency}"
+            )
+
+        rate = Decimal(str(rate))
+
+        cls._rates_cache[cache_key] = (
+            datetime.utcnow(),
+            rate,
+        )
+
+        return rate
 
     @classmethod
     def convert(
@@ -25,33 +63,37 @@ class CurrencyService:
         from_currency: str,
         to_currency: str,
     ) -> float:
+        if not from_currency:
+            raise ValueError(
+                "Source currency is required"
+            )
+
+        if not to_currency:
+            raise ValueError(
+                "Target currency is required"
+            )
+
         from_currency = from_currency.upper()
         to_currency = to_currency.upper()
 
         if from_currency == to_currency:
             return round(amount, 2)
 
-        if from_currency not in cls.RATES_TO_EUR:
-            raise ValueError(
-                f"Unsupported source currency: {from_currency}"
-            )
-
-        if to_currency not in cls.RATES_TO_EUR:
-            raise ValueError(
-                f"Unsupported target currency: {to_currency}"
-            )
-
-        amount_eur = (
-            Decimal(str(amount))
-            * cls.RATES_TO_EUR[from_currency]
+        rate = cls._get_rate(
+            from_currency=from_currency,
+            to_currency=to_currency,
         )
 
         result = (
-            amount_eur
-            / cls.RATES_TO_EUR[to_currency]
+            Decimal(str(amount))
+            * rate
         )
 
-        return float(result.quantize(Decimal("0.01")))
+        return float(
+            result.quantize(
+                Decimal("0.01")
+            )
+        )
 
 
 currency_service = CurrencyService()

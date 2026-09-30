@@ -269,31 +269,6 @@ class GeoapifyLocationProvider(LocationProvider):
 
         return location["country_code"]
 
-    # def get_country_bbox(
-    #     self,
-    #     country: str,
-    # ):
-    #     query = country.strip()
-    #
-    #     if not query:
-    #         return None
-    #
-    #     features = self._search(
-    #         query=query,
-    #         location_type="country",
-    #         limit=1,
-    #     )
-    #
-    #     if not features:
-    #         return None
-    #
-    #     bbox = features[0].get("bbox")
-    #
-    #     if not bbox or len(bbox) != 4:
-    #         return None
-    #
-    #     return bbox
-
     def get_country_place_id(
         self,
         country: str,

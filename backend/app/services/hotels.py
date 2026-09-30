@@ -1,13 +1,21 @@
 from sqlalchemy.orm import Session
 import json
+import os
+
 from app.models.hotel import TripHotel
 from app.models.trip import Trip
+from app.models.transport import TripTransport
+from app.models.trip_stop import TripStop
 from app.models.hotel_content import HotelContent
 from app.models.hotel_room import HotelRoom
 from app.schemas.trip import HotelCreate
 from app.services.hotel_provider import hotel_provider
 from app.services.cache_service import cache_service
 from app.services.currency_service import currency_service
+from app.services.hotel_content import HotelContentProvider
+from app.services.hotel_content_service import HotelContentService
+from types import SimpleNamespace
+from app.services.trip_consistency import get_trip_consistency_warnings
 
 
 
@@ -19,12 +27,34 @@ def generate_hotel_options(
     refresh: bool = False,
     page: int = 1,
     limit: int = 50,
+    stop=None,
 ):
+    search_context = trip
+
+    if stop is not None:
+        search_context = SimpleNamespace(
+            id=trip.id,
+            destination=stop.city,
+            destination_latitude=stop.latitude,
+            destination_longitude=stop.longitude,
+            start_date=stop.start_date,
+            end_date=stop.end_date,
+            destination_currency=trip.destination_currency,
+            user_currency=trip.user_currency,
+        )
+
+    cache_type = (
+        f"hotel_stop_{stop.id}"
+        if stop is not None
+        else "hotel"
+    )
+
     cache = cache_service.get(
         db=db,
         trip_id=trip.id,
-        cache_type="hotel",
+        cache_type=cache_type,
     )
+
     if page < 1:
         page = 1
 
@@ -82,14 +112,12 @@ def generate_hotel_options(
             ),
         }
 
-    options = hotel_provider.get_hotel_options(
-        trip
-    )
+    options = hotel_provider.get_hotel_options(search_context)
 
     cache = cache_service.save(
         db=db,
         trip_id=trip.id,
-        cache_type="hotel",
+        cache_type=cache_type,
         data=options,
     )
     total_options = len(options)
@@ -139,20 +167,39 @@ def create_hotel(
     hotel: HotelCreate,
     db: Session,
 ):
-    existing_hotel = (
+    existing_hotel_query = (
         db.query(TripHotel)
         .filter(
             TripHotel.trip_id == trip_id,
         )
-        .first()
     )
+
+    if hotel.stop_id is None:
+        existing_hotel_query = existing_hotel_query.filter(
+            TripHotel.stop_id.is_(None),
+        )
+    else:
+        existing_hotel_query = existing_hotel_query.filter(
+            TripHotel.stop_id == hotel.stop_id,
+        )
+
+    existing_hotel = existing_hotel_query.first()
 
     if existing_hotel:
         db.delete(existing_hotel)
         db.flush()
 
+    print(
+        "CREATE HOTEL COORDINATES: "
+        f"name={hotel.name}, "
+        f"stop_id={hotel.stop_id}, "
+        f"latitude={hotel.latitude}, "
+        f"longitude={hotel.longitude}"
+    )
+
     new_hotel = TripHotel(
         trip_id=trip_id,
+        stop_id=hotel.stop_id,
         name=hotel.name,
         city=hotel.city,
         address=hotel.address,
@@ -171,6 +218,37 @@ def create_hotel(
     db.commit()
     db.refresh(new_hotel)
 
+    hotel_data = new_hotel.hotel_data or {}
+    hotel_code = hotel_data.get("hotel_code")
+
+    if hotel_code:
+        api_key = os.getenv("HOTELBEDS_API_KEY")
+        secret = os.getenv("HOTELBEDS_SECRET")
+
+        if api_key and secret:
+            hotel_content = (
+                db.query(HotelContent)
+                .filter(
+                    HotelContent.hotel_code == str(hotel_code)
+                )
+                .first()
+            )
+
+            if hotel_content is None:
+                provider = HotelContentProvider(
+                    api_key=api_key,
+                    secret=secret,
+                )
+
+                service = HotelContentService(
+                    db=db,
+                    provider=provider,
+                )
+
+                service.sync_hotels(
+                    language="ENG",
+                    hotel_code=str(hotel_code),
+                )
 
     trip = (
         db.query(Trip)
@@ -178,14 +256,24 @@ def create_hotel(
         .first()
     )
 
+    warnings = get_trip_consistency_warnings(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    print("HOTEL CONSISTENCY WARNINGS:", warnings)
+
     return {
         "message": "Hotel created",
         "hotel": {
             "id": new_hotel.id,
             "trip_id": new_hotel.trip_id,
+            "stop_id": new_hotel.stop_id,
             "name": new_hotel.name,
             "city": new_hotel.city,
             "address": new_hotel.address,
+            "latitude": new_hotel.latitude,
+            "longitude": new_hotel.longitude,
             "price_per_night": new_hotel.price_per_night,
             "nights": new_hotel.nights,
             "total_price": new_hotel.total_price,
@@ -209,6 +297,7 @@ def create_hotel(
             "check_out": new_hotel.check_out,
             **(new_hotel.hotel_data or {}),
         },
+        "warnings": warnings,
     }
 
 
@@ -235,6 +324,7 @@ def get_hotels(
         "hotels": [
             {
                 "id": hotel.id,
+                "stop_id": hotel.stop_id,
                 "name": hotel.name,
                 "city": hotel.city,
                 "address": hotel.address,
@@ -285,8 +375,64 @@ def delete_hotel(
     if hotel is None:
         return None
 
+    print(
+        "DELETE HOTEL: "
+        f"hotel_id={hotel.id}, "
+        f"trip_id={hotel.trip_id}, "
+        f"stop_id={hotel.stop_id}"
+    )
+
+    all_transports = (
+        db.query(TripTransport)
+        .filter(
+            TripTransport.trip_id == trip_id,
+        )
+        .all()
+    )
+
+    print(
+        "ALL TRANSPORTS BEFORE HOTEL DELETE: "
+        f"{[(t.id, t.transport_type, t.direction, t.parent_transport_id) for t in all_transports]}"
+    )
+
+    transfers = [
+        transport
+        for transport in all_transports
+        if transport.transport_type.startswith("Transfer")
+    ]
+
+    print(
+        "TRANSFERS BEFORE HOTEL DELETE: "
+        f"{[(t.id, t.transport_type, t.direction, t.parent_transport_id) for t in transfers]}"
+    )
+
+    parent_ids = {
+        transport.parent_transport_id
+        for transport in transfers
+        if transport.parent_transport_id is not None
+    }
+
+    print(
+        "TRANSFER PARENT IDS: "
+        f"{sorted(parent_ids)}"
+    )
+
+    for transfer in transfers:
+        print(
+            "DELETE TRANSFER WITH HOTEL: "
+            f"id={transfer.id}, "
+            f"parent={transfer.parent_transport_id}"
+        )
+
+        db.delete(transfer)
+
     db.delete(hotel)
     db.commit()
+
+    print(
+        "HOTEL AND TRANSFERS DELETED: "
+        f"hotel_id={hotel_id}"
+    )
 
     return {
         "message": "Hotel deleted",

@@ -14,6 +14,8 @@ class TripHotel(Base):
         nullable=False,
     )
 
+    stop_id = Column(Integer, ForeignKey("trip_stops.id"), nullable=True, index=True)
+
     name = Column(String(255), nullable=False)
     city = Column(String(255), nullable=False)
     address = Column(String(255), nullable=False)

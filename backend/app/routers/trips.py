@@ -8,6 +8,8 @@ from app.schemas.trip import (
     CurrencyUpdate,
     FoodPreferenceUpdate,
     TripDatesUpdate,
+    TripStopCreate,
+    TripStopUpdate,
 )
 from app.services.trips import (
     create_trip,
@@ -16,6 +18,10 @@ from app.services.trips import (
     update_user_currency,
     update_food_preference,
     update_trip_dates,
+    create_trip_stop,
+    get_trip_stops,
+    update_trip_stop,
+    delete_trip_stop,
 )
 from app.services.budget import calculate_budget
 
@@ -116,6 +122,136 @@ def update_food_preference_endpoint(
 
     return result
 
+@router.post("/{trip_id}/stops")
+def create_trip_stop_endpoint(
+    trip_id: int,
+    stop: TripStopCreate,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = create_trip_stop(
+            trip_id=trip_id,
+            city=stop.city,
+            country=stop.country,
+            latitude=stop.latitude,
+            longitude=stop.longitude,
+            start_date=stop.start_date,
+            end_date=stop.end_date,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return {
+        "stop": {
+            "id": result.id,
+            "trip_id": result.trip_id,
+            "city": result.city,
+            "country": result.country,
+            "latitude": result.latitude,
+            "longitude": result.longitude,
+            "start_date": result.start_date,
+            "end_date": result.end_date,
+            "sort_order": result.sort_order,
+        }
+    }
+
+
+@router.get("/{trip_id}/stops")
+def get_trip_stops_endpoint(
+    trip_id: int,
+    db: Session = Depends(get_db),
+):
+    result = get_trip_stops(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    return {
+        "stops": result,
+    }
+
+
+@router.put("/{trip_id}/stops/{stop_id}")
+def update_trip_stop_endpoint(
+    trip_id: int,
+    stop_id: int,
+    stop: TripStopUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = update_trip_stop(
+            trip_id=trip_id,
+            stop_id=stop_id,
+            city=stop.city,
+            country=stop.country,
+            latitude=stop.latitude,
+            longitude=stop.longitude,
+            start_date=stop.start_date,
+            end_date=stop.end_date,
+            db=db,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=str(e),
+        )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip stop not found",
+        )
+
+    return {
+        "stop": {
+            "id": result.id,
+            "trip_id": result.trip_id,
+            "city": result.city,
+            "country": result.country,
+            "latitude": result.latitude,
+            "longitude": result.longitude,
+            "start_date": result.start_date,
+            "end_date": result.end_date,
+            "sort_order": result.sort_order,
+        }
+    }
+
+
+@router.delete("/{trip_id}/stops/{stop_id}")
+def delete_trip_stop_endpoint(
+    trip_id: int,
+    stop_id: int,
+    db: Session = Depends(get_db),
+):
+    result = delete_trip_stop(
+        trip_id=trip_id,
+        stop_id=stop_id,
+        db=db,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip stop not found",
+        )
+
+    return result
 
 @router.get("/{trip_id}/budget")
 def get_budget_endpoint(

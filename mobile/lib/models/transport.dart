@@ -64,6 +64,8 @@ class TransportSegment {
 class Transport {
   final int? id;
   final int? tripId;
+  final int? parentTransportId;
+  final Map<String, dynamic>? transferData;
 
   final String direction;
   final String type;
@@ -96,6 +98,8 @@ class Transport {
   const Transport({
     this.id,
     this.tripId,
+    this.parentTransportId,
+    this.transferData,
     required this.direction,
     required this.type,
     required this.price,
@@ -121,6 +125,10 @@ class Transport {
     return Transport(
       id: json['id'],
       tripId: json['trip_id'],
+      parentTransportId: json['parent_transport_id'],
+      transferData: json['transfer_data'] is Map
+          ? Map<String, dynamic>.from(json['transfer_data'])
+          : null,
       direction: json['direction'] ?? '',
       type: json['type'] ?? '',
       price: (json['price'] as num).toDouble(),
@@ -164,6 +172,8 @@ class Transport {
     return {
       'id': id,
       'trip_id': tripId,
+      'parent_transport_id': parentTransportId,
+      'transfer_data': transferData,
       'direction': direction,
       'type': type,
       'price': price,
