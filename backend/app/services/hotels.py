@@ -427,16 +427,72 @@ def delete_hotel(
         db.delete(transfer)
 
     db.delete(hotel)
+
+    stop_after_hotel_delete = None
+
+    if hotel.stop_id is not None:
+        stop_after_hotel_delete = (
+            db.query(TripStop)
+            .filter(
+                TripStop.id == hotel.stop_id,
+                TripStop.trip_id == trip_id,
+            )
+            .first()
+        )
+
+    print(
+        "STOP BEFORE HOTEL COMMIT:",
+        (
+            stop_after_hotel_delete.id,
+            stop_after_hotel_delete.city,
+        )
+        if stop_after_hotel_delete is not None
+        else None,
+    )
+
     db.commit()
+
+    stop_after_commit = None
+
+    if hotel.stop_id is not None:
+        stop_after_commit = (
+            db.query(TripStop)
+            .filter(
+                TripStop.id == hotel.stop_id,
+                TripStop.trip_id == trip_id,
+            )
+            .first()
+        )
+
+    print(
+        "STOP AFTER HOTEL COMMIT:",
+        (
+            stop_after_commit.id,
+            stop_after_commit.city,
+        )
+        if stop_after_commit is not None
+        else None,
+    )
 
     print(
         "HOTEL AND TRANSFERS DELETED: "
         f"hotel_id={hotel_id}"
     )
 
+    warnings = get_trip_consistency_warnings(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    print(
+        "HOTEL CONSISTENCY WARNINGS AFTER DELETE:",
+        warnings,
+    )
+
     return {
         "message": "Hotel deleted",
         "hotel_id": hotel_id,
+        "warnings": warnings,
     }
 
 def get_hotel_room_details(

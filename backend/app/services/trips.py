@@ -5,10 +5,12 @@ from babel.numbers import get_territory_currencies
 from app.models.trip import Trip
 from app.models.transport import TripTransport
 from app.models.hotel import TripHotel
+from app.services.hotels import generate_hotel_options
 from app.models.place import TripPlace
 from app.models.trip_stop import TripStop
 from app.schemas.trip import TripCreate
 from app.models.api_cache import ApiCache
+from app.services.trip_consistency import get_trip_consistency_warnings
 
 def get_currency_for_country(country_code: str | None) -> str | None:
     if not country_code:
@@ -59,8 +61,24 @@ def create_trip(
     )
 
     db.add(new_trip)
+    db.flush()
+
+    first_stop = TripStop(
+        trip_id=new_trip.id,
+        city=trip.destination,
+        country=destination_country,
+        latitude=trip.destination_latitude,
+        longitude=trip.destination_longitude,
+        start_date=trip.start_date,
+        end_date=trip.end_date,
+        sort_order=0,
+    )
+
+    db.add(first_stop)
     db.commit()
+
     db.refresh(new_trip)
+    db.refresh(first_stop)
 
     return {
         "message": "Trip created",
@@ -350,6 +368,15 @@ def update_trip_stop(
             f"{overlapping_stop.end_date})"
         )
 
+    hotel = (
+        db.query(TripHotel)
+        .filter(
+            TripHotel.trip_id == trip_id,
+            TripHotel.stop_id == stop_id,
+        )
+        .first()
+    )
+
     stop.city = city
     stop.country = country
     stop.latitude = latitude
@@ -357,10 +384,83 @@ def update_trip_stop(
     stop.start_date = start_date
     stop.end_date = end_date
 
+    db.flush()
+
+    hotel_status = None
+
+    if hotel is not None:
+        trip = (
+            db.query(Trip)
+            .filter(Trip.id == trip_id)
+            .first()
+        )
+
+        hotel_options = generate_hotel_options(
+            trip=trip,
+            db=db,
+            refresh=True,
+            stop=stop,
+        )
+
+        hotel_data = hotel.hotel_data or {}
+
+        hotel_code = hotel_data.get("hotel_code")
+        room_code = hotel_data.get("room_code")
+
+        matched_hotel = None
+        matched_rate = None
+
+        for option in hotel_options["options"]:
+            if str(option.get("hotel_code")) != str(hotel_code):
+                continue
+
+            for rate in option.get("rate_options", []):
+                if str(rate.get("room_code")) != str(room_code):
+                    continue
+
+                matched_hotel = option
+                matched_rate = rate
+                break
+
+            if matched_hotel is not None:
+                break
+
+        if matched_hotel is None:
+            db.delete(hotel)
+            hotel_status = "unavailable"
+        else:
+            hotel.check_in = start_date
+            hotel.check_out = end_date
+            hotel.nights = matched_hotel["nights"]
+            hotel.price_per_night = matched_rate["price_per_night"]
+            hotel.total_price = matched_rate["total_price"]
+            hotel.currency = matched_rate["currency"]
+
+            hotel_data["rate_options"] = (
+                matched_hotel.get("rate_options", [])
+            )
+
+            hotel_data["room_code"] = (
+                matched_rate.get("room_code")
+            )
+
+            hotel.hotel_data = hotel_data
+
+            hotel_status = "updated"
+
     db.commit()
     db.refresh(stop)
 
-    return stop
+    warnings = get_trip_consistency_warnings(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    return {
+        "stop": stop,
+        "hotel_status": hotel_status,
+        "warnings": warnings,
+    }
 
 
 def delete_trip_stop(

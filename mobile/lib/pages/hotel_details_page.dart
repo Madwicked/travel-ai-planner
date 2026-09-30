@@ -669,7 +669,14 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
   }
 
   Future<void> _deleteHotel() async {
-    if (hotel.id == null || hotel.tripId == null) {
+    print('DELETE HOTEL BUTTON PRESSED');
+    print(
+      'DELETE HOTEL DATA: '
+      'id=${hotel.id}, '
+      'tripId=${hotel.tripId}, '
+      'stopId=${hotel.stopId}',
+    );
+    if (hotel.id == null || widget.trip['id'] == null) {
       return;
     }
 
@@ -703,12 +710,21 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
       isDeleting = true;
     });
 
+    print(
+      'DELETE HOTEL UI: '
+      'tripId=${hotel.tripId}, '
+      'hotelId=${hotel.id}',
+    );
+
     try {
-      await HotelService.deleteHotel(tripId: hotel.tripId!, hotelId: hotel.id!);
+      final result = await HotelService.deleteHotel(
+        tripId: widget.trip['id'],
+        hotelId: hotel.id!,
+      );
 
       if (!mounted) return;
 
-      Navigator.pop(context, true);
+      Navigator.pop(context, result);
     } catch (e) {
       if (!mounted) return;
 
@@ -807,6 +823,10 @@ class _HotelDetailsPageState extends State<HotelDetailsPage> {
             const SizedBox(height: 20),
 
             _buildRoomDetailsCard(),
+
+            const SizedBox(height: 20),
+
+            _buildSelectedRateCard(),
 
             if (hotel.facilities.isNotEmpty) ...[
               const SizedBox(height: 20),

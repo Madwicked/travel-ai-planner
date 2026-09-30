@@ -73,6 +73,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
   Map<String, dynamic>? budget;
   bool isLoadingBudget = true;
 
+  List<Map<String, dynamic>> consistencyWarnings = [];
+
   bool includeArrivalDayActivities = false;
   bool includeDepartureDayActivities = false;
 
@@ -92,6 +94,117 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     loadSelectedPlaces();
     loadTripStops();
     loadBudget();
+    _loadConsistencyWarnings();
+  }
+
+  Future<void> _loadConsistencyWarnings() async {
+    try {
+      final warnings = await TripStopService.getConsistencyWarnings(
+        widget.trip['id'],
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _setConsistencyWarnings(warnings);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      _setConsistencyWarnings([]);
+    }
+  }
+
+  void _setConsistencyWarnings(dynamic warnings) {
+    if (!mounted) {
+      return;
+    }
+
+    final parsedWarnings = warnings is List
+        ? warnings
+              .whereType<Map>()
+              .map((warning) => Map<String, dynamic>.from(warning))
+              .toList()
+        : <Map<String, dynamic>>[];
+
+    setState(() {
+      consistencyWarnings = parsedWarnings;
+    });
+  }
+
+  Widget _buildConsistencyWarnings() {
+    if (consistencyWarnings.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                SizedBox(width: 8),
+                Text(
+                  'Trip warnings',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...consistencyWarnings.map((warning) {
+              final severity = warning['severity']?.toString();
+              final message = warning['message']?.toString();
+
+              if (message == null || message.isEmpty) {
+                return const SizedBox.shrink();
+              }
+
+              final isImportant = severity == 'important';
+
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isImportant
+                      ? Colors.red.withOpacity(0.08)
+                      : Colors.orange.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isImportant
+                        ? Colors.red.withOpacity(0.25)
+                        : Colors.orange.withOpacity(0.25),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isImportant ? Icons.error_outline : Icons.info_outline,
+                      size: 20,
+                      color: isImportant ? Colors.red : Colors.orange,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        message,
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> addTripStop() async {
@@ -106,10 +219,9 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     final tripEndDate = DateTime.parse(widget.trip['end_date'].toString());
 
-    final tripCountry = widget.trip['destination_country']
-        ?.toString()
-        .trim()
-        .toLowerCase();
+    final tripCountry = tripStops.isNotEmpty
+        ? tripStops.first.country?.trim().toLowerCase()
+        : null;
 
     final cityController = TextEditingController();
 
@@ -775,24 +887,35 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Future<bool> saveTransport(Transport transport) async {
+  Future<List<Map<String, dynamic>>?> saveTransport(Transport transport) async {
     final tripId = widget.trip['id'];
 
     try {
-      await TransportService.createTransport(
+      final result = await TransportService.createTransport(
         tripId: tripId,
         transport: transport,
       );
 
-      return true;
+      final warnings = result['warnings'];
+
+      if (warnings is List) {
+        return warnings
+            .whereType<Map>()
+            .map((warning) => Map<String, dynamic>.from(warning))
+            .toList();
+      }
+
+      return [];
     } catch (e) {
-      if (!mounted) return false;
+      if (!mounted) {
+        return null;
+      }
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to save transport: $e')));
 
-      return false;
+      return null;
     }
   }
 
@@ -822,11 +945,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       }
     }
 
-    final saved = await saveTransport(transport);
+    final warnings = await saveTransport(transport);
 
-    if (!saved || !context.mounted) {
+    if (warnings == null || !context.mounted) {
       return;
     }
+
+    _setConsistencyWarnings(warnings);
 
     await loadSelectedTransports();
     await loadBudget();
@@ -864,11 +989,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       }
     }
 
-    final saved = await saveTransport(transport);
+    final warnings = await saveTransport(transport);
 
-    if (!saved || !context.mounted) {
+    if (warnings == null || !context.mounted) {
       return;
     }
+
+    _setConsistencyWarnings(warnings);
 
     await loadSelectedTransports();
 
@@ -1032,10 +1159,12 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         }
       }
 
-      await TransportService.createTransport(
+      final result = await TransportService.createTransport(
         tripId: widget.trip['id'],
         transport: transfer,
       );
+
+      _setConsistencyWarnings(result['warnings']);
 
       if (!mounted) return;
 
@@ -1047,6 +1176,13 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
       await loadSelectedTransports();
       await loadBudget();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Transfer added. You can find it in Transport Details.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -1297,6 +1433,35 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     );
   }
 
+  Future<void> _deleteTransport(Transport transport) async {
+    if (transport.id == null) {
+      return;
+    }
+
+    try {
+      await TransportService.deleteTransport(
+        tripId: widget.trip['id'],
+        transportId: transport.id!,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      await loadSelectedTransports();
+      await _loadConsistencyWarnings();
+      await loadBudget();
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete transport: $e')));
+    }
+  }
+
   Widget buildTransportCard(
     Transport transport, {
     required VoidCallback onChange,
@@ -1311,8 +1476,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       'type=${transport.type}, '
       'transferChoice=$transferChoice',
     );
+
     final bool isReturn = transport.direction == 'return';
     final bool isTransfer = transport.type.startsWith('Transfer');
+
     if (isTransfer) {
       return _buildTransferCard(transport);
     }
@@ -1354,192 +1521,216 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(18),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Stack(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  getTransportIcon(transport.type),
-                  color: Colors.blue,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      getTransportIcon(transport.type),
+                      color: Colors.blue,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                departureLabel,
-                                softWrap: true,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              const Text(
-                                '↓',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                arrivalLabel,
-                                softWrap: true,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          mainAxisSize: MainAxisSize.min,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${transport.userPrice} '
-                              '${transport.userCurrency}',
-                              textAlign: TextAlign.right,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${transport.destinationPrice} '
-                              '${transport.destinationCurrency}',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                OutlinedButton(
-                                  onPressed: isTransfer ? null : onChange,
-                                  child: const Text('Change'),
-                                ),
-                                if (!isTransfer && onAddTransfer != null) ...[
-                                  const SizedBox(height: 6),
-                                  OutlinedButton(
-                                    onPressed: onAddTransfer,
-                                    style: OutlinedButton.styleFrom(
-                                      minimumSize: const Size(48, 42),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 8,
-                                      ),
-                                      side: BorderSide(
-                                        color: transferChoice != null
-                                            ? Colors.blue
-                                            : Colors.grey.shade400,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    departureLabel,
+                                    softWrap: true,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                    child: Icon(
-                                      transferChoice == 'Transfer'
-                                          ? Icons.directions_car
-                                          : transferChoice == 'Build a route'
-                                          ? Icons.alt_route
-                                          : Icons.directions_car_outlined,
-                                      color:
-                                          transferChoice == 'Transfer' ||
-                                              transferChoice == 'Build a route'
-                                          ? Colors.blue
-                                          : Colors.grey.shade600,
-                                      size: 24,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    '↓',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    arrivalLabel,
+                                    softWrap: true,
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${transport.userPrice} '
+                                  '${transport.userCurrency}',
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${transport.destinationPrice} '
+                                  '${transport.destinationCurrency}',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    OutlinedButton(
+                                      onPressed: isTransfer ? null : onChange,
+                                      child: const Text('Change'),
+                                    ),
+                                    if (!isTransfer &&
+                                        onAddTransfer != null) ...[
+                                      const SizedBox(height: 6),
+                                      OutlinedButton(
+                                        onPressed: onAddTransfer,
+                                        style: OutlinedButton.styleFrom(
+                                          minimumSize: const Size(48, 42),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 8,
+                                          ),
+                                          side: BorderSide(
+                                            color: transferChoice != null
+                                                ? Colors.blue
+                                                : Colors.grey.shade400,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          transferChoice == 'Transfer'
+                                              ? Icons.directions_car
+                                              : transferChoice ==
+                                                    'Build a route'
+                                              ? Icons.alt_route
+                                              : Icons.directions_car_outlined,
+                                          color:
+                                              transferChoice == 'Transfer' ||
+                                                  transferChoice ==
+                                                      'Build a route'
+                                              ? Colors.blue
+                                              : Colors.grey.shade600,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ],
                             ),
                           ],
                         ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${_formatDate(transport.departureDate)} → ${_formatDate(transport.arrivalDate)}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${transport.departureTime} → '
+                          '${transport.arrivalTime}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          transport.duration,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        if (transport.segments.length > 1) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Connections: ${transport.segments.take(transport.segments.length - 1).map((segment) => segment.arrivalLocation).join(' → ')}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                        if (isTransfer) ...[
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                print(
+                                  'DELETE BUTTON PRESSED: '
+                                  'id=${transport.id}, '
+                                  'parent=${transport.parentTransportId}, '
+                                  'direction=${transport.direction}',
+                                );
+
+                                _deleteTransfer(transport);
+                              },
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              label: const Text(
+                                'Delete transfer',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${_formatDate(transport.departureDate)} → ${_formatDate(transport.arrivalDate)}',
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${transport.departureTime} → '
-                      '${transport.arrivalTime}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      transport.duration,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    if (transport.segments.length > 1) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Connections: ${transport.segments.take(transport.segments.length - 1).map((segment) => segment.arrivalLocation).join(' → ')}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                    if (isTransfer) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: () {
-                            print(
-                              'DELETE BUTTON PRESSED: '
-                              'id=${transport.id}, '
-                              'parent=${transport.parentTransportId}, '
-                              'direction=${transport.direction}',
-                            );
-
-                            _deleteTransfer(transport);
-                          },
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.red,
-                          ),
-                          label: const Text(
-                            'Delete transfer',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
+                ],
+              ),
+              Positioned(
+                right: 0,
+                top: 190,
+                child: IconButton(
+                  onPressed: () {
+                    _deleteTransport(transport);
+                  },
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.red,
+                    size: 24,
+                  ),
+                  tooltip: 'Delete transport',
                 ),
               ),
             ],
@@ -1762,6 +1953,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     if (result is bool && result) {
       await loadSelectedHotel();
       await loadSelectedTransports();
+      await _loadConsistencyWarnings();
       await loadBudget();
 
       return;
@@ -1777,6 +1969,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
     await loadSelectedTransports();
     await loadTripStops();
+    await _loadConsistencyWarnings();
     await loadBudget();
 
     if (!mounted) {
@@ -1816,9 +2009,20 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       return;
     }
 
+    if (result is Map<String, dynamic>) {
+      await loadSelectedHotel();
+      await loadTripStops();
+      await loadSelectedTransports();
+      await _loadConsistencyWarnings();
+      await loadBudget();
+
+      return;
+    }
+
     if (result is bool && result) {
       await loadSelectedHotel();
       await loadSelectedTransports();
+      await _loadConsistencyWarnings();
       await loadBudget();
 
       return;
@@ -1837,20 +2041,27 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
         stopId: stop.id,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         selectedStopHotels[stop.id] = savedHotel;
       });
 
+      await _loadConsistencyWarnings();
       await loadBudget();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Hotel updated')));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Failed to update hotel: $e')));
@@ -2229,6 +2440,257 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     );
   }
 
+  Future<void> editTripStopDates(TripStop stop) async {
+    DateTime? startDate = stop.startDate;
+    DateTime? endDate = stop.endDate;
+
+    final tripStartDate = DateTime.parse(widget.trip['start_date'].toString());
+
+    final tripEndDate = DateTime.parse(widget.trip['end_date'].toString());
+
+    bool isDateAvailable(DateTime date) {
+      final selectedDate = DateTime(date.year, date.month, date.day);
+
+      for (final otherStop in tripStops) {
+        if (otherStop.id == stop.id) {
+          continue;
+        }
+
+        final otherStart = DateTime(
+          otherStop.startDate.year,
+          otherStop.startDate.month,
+          otherStop.startDate.day,
+        );
+
+        final otherEnd = DateTime(
+          otherStop.endDate.year,
+          otherStop.endDate.month,
+          otherStop.endDate.day,
+        );
+
+        if (!selectedDate.isBefore(otherStart) &&
+            selectedDate.isBefore(otherEnd)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    Future<DateTime?> selectDate({
+      required DateTime initialDate,
+      required DateTime firstDate,
+      required DateTime lastDate,
+      required bool isStartDate,
+    }) async {
+      DateTime? calendarInitialDate = initialDate;
+
+      if (calendarInitialDate.isBefore(firstDate)) {
+        calendarInitialDate = firstDate;
+      }
+
+      if (calendarInitialDate.isAfter(lastDate)) {
+        calendarInitialDate = lastDate;
+      }
+
+      while (calendarInitialDate!.isBefore(lastDate) ||
+          calendarInitialDate.isAtSameMomentAs(lastDate)) {
+        if (isDateAvailable(calendarInitialDate)) {
+          break;
+        }
+
+        calendarInitialDate = calendarInitialDate.add(const Duration(days: 1));
+      }
+
+      if (calendarInitialDate.isAfter(lastDate) ||
+          !isDateAvailable(calendarInitialDate)) {
+        return null;
+      }
+
+      final selected = await showDialog<DateTime>(
+        context: context,
+        builder: (calendarContext) {
+          return Dialog(
+            child: CalendarDatePicker(
+              initialDate: calendarInitialDate!,
+              firstDate: firstDate,
+              lastDate: lastDate,
+              selectableDayPredicate: isDateAvailable,
+              onDateChanged: (date) {
+                Navigator.of(calendarContext).pop(date);
+              },
+            ),
+          );
+        },
+      );
+
+      return selected;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            String formatDate(DateTime? date) {
+              if (date == null) {
+                return 'Select date';
+              }
+
+              return '${date.day.toString().padLeft(2, '0')}.'
+                  '${date.month.toString().padLeft(2, '0')}.'
+                  '${date.year}';
+            }
+
+            Future<void> selectStartDate() async {
+              final selected = await selectDate(
+                initialDate: startDate!,
+                firstDate: tripStartDate,
+                lastDate: tripEndDate,
+                isStartDate: true,
+              );
+
+              if (selected == null) {
+                return;
+              }
+
+              setDialogState(() {
+                startDate = selected;
+
+                if (endDate != null && !endDate!.isAfter(selected)) {
+                  endDate = null;
+                }
+              });
+            }
+
+            Future<void> selectEndDate() async {
+              if (startDate == null) {
+                return;
+              }
+
+              final minimumDate = startDate!.add(const Duration(days: 1));
+
+              if (minimumDate.isAfter(tripEndDate)) {
+                return;
+              }
+
+              final selected = await selectDate(
+                initialDate: endDate ?? minimumDate,
+                firstDate: minimumDate,
+                lastDate: tripEndDate,
+                isStartDate: false,
+              );
+
+              if (selected == null) {
+                return;
+              }
+
+              setDialogState(() {
+                endDate = selected;
+              });
+            }
+
+            return AlertDialog(
+              title: Text(stop.city),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Stay dates',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: selectStartDate,
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(formatDate(startDate)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: startDate == null ? null : selectEndDate,
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(formatDate(endDate)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Trip dates: '
+                    '${_formatDate(widget.trip['start_date'])}'
+                    ' — '
+                    '${_formatDate(widget.trip['end_date'])}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: startDate == null || endDate == null
+                      ? null
+                      : () {
+                          Navigator.of(dialogContext).pop(true);
+                        },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != true || startDate == null || endDate == null) {
+      return;
+    }
+
+    try {
+      final updateResult = await TripStopService.updateTripStop(
+        tripId: widget.trip['id'],
+        stopId: stop.id,
+        city: stop.city,
+        country: stop.country,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        startDate: startDate!,
+        endDate: endDate!,
+      );
+
+      _setConsistencyWarnings(updateResult['warnings']);
+
+      await loadTripStops();
+      await loadSelectedHotel();
+      await loadSelectedTransports();
+      await loadBudget();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('${stop.city} dates updated.')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to update dates: $e')));
+    }
+  }
+
   Widget buildTripStopsSection() {
     if (isLoadingTripStops) {
       return const Center(child: CircularProgressIndicator());
@@ -2308,22 +2770,32 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                           '${stop.endDate.month.toString().padLeft(2, '0')}.'
                           '${stop.endDate.year}',
                         ),
-                        trailing: IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.red,
-                          ),
-                          onPressed: () async {
-                            await TripStopService.deleteTripStop(
-                              tripId: widget.trip['id'],
-                              stopId: stop.id,
-                            );
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () => editTripStopDates(stop),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                              onPressed: () async {
+                                await TripStopService.deleteTripStop(
+                                  tripId: widget.trip['id'],
+                                  stopId: stop.id,
+                                );
 
-                            await loadTripStops();
-                            await loadSelectedHotel();
-                            await loadSelectedTransports();
-                            await loadBudget();
-                          },
+                                await loadTripStops();
+                                await loadSelectedHotel();
+                                await loadSelectedTransports();
+                                await _loadConsistencyWarnings();
+                                await loadBudget();
+                              },
+                            ),
+                          ],
                         ),
                       ),
 
@@ -2492,6 +2964,10 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             const SizedBox(height: 24),
 
             buildTripStopsSection(),
+
+            const SizedBox(height: 16),
+
+            _buildConsistencyWarnings(),
 
             const SizedBox(height: 16),
 

@@ -66,7 +66,7 @@ class TransportService {
         .toList();
   }
 
-  static Future<Transport> createTransport({
+  static Future<Map<String, dynamic>> createTransport({
     required int tripId,
     required Transport transport,
   }) async {
@@ -111,7 +111,12 @@ class TransportService {
 
     final data = jsonDecode(response.body);
 
-    return Transport.fromJson(Map<String, dynamic>.from(data['transport']));
+    return {
+      'transport': Transport.fromJson(
+        Map<String, dynamic>.from(data['transport']),
+      ),
+      'warnings': data['warnings'] ?? [],
+    };
   }
 
   static Future<void> deleteTransport({

@@ -142,7 +142,7 @@ class HotelService {
     return HotelRoomDetails.fromJson(Map<String, dynamic>.from(data));
   }
 
-  static Future<void> deleteHotel({
+  static Future<Map<String, dynamic>> deleteHotel({
     required int tripId,
     required int hotelId,
   }) async {
@@ -155,5 +155,7 @@ class HotelService {
     if (response.statusCode != 200) {
       throw Exception('Server error: ${response.statusCode}');
     }
+
+    return Map<String, dynamic>.from(jsonDecode(response.body));
   }
 }

@@ -24,6 +24,7 @@ from app.services.trips import (
     delete_trip_stop,
 )
 from app.services.budget import calculate_budget
+from app.services.trip_consistency import get_trip_consistency_warnings
 
 
 router = APIRouter(
@@ -122,6 +123,20 @@ def update_food_preference_endpoint(
 
     return result
 
+@router.get("/{trip_id}/consistency-warnings")
+def get_consistency_warnings_endpoint(
+    trip_id: int,
+    db: Session = Depends(get_db),
+):
+    warnings = get_trip_consistency_warnings(
+        trip_id=trip_id,
+        db=db,
+    )
+
+    return {
+        "warnings": warnings,
+    }
+
 @router.post("/{trip_id}/stops")
 def create_trip_stop_endpoint(
     trip_id: int,
@@ -219,17 +234,20 @@ def update_trip_stop_endpoint(
         )
 
     return {
+        "message": "Trip stop updated",
         "stop": {
-            "id": result.id,
-            "trip_id": result.trip_id,
-            "city": result.city,
-            "country": result.country,
-            "latitude": result.latitude,
-            "longitude": result.longitude,
-            "start_date": result.start_date,
-            "end_date": result.end_date,
-            "sort_order": result.sort_order,
-        }
+            "id": result["stop"].id,
+            "trip_id": result["stop"].trip_id,
+            "city": result["stop"].city,
+            "country": result["stop"].country,
+            "latitude": result["stop"].latitude,
+            "longitude": result["stop"].longitude,
+            "start_date": result["stop"].start_date,
+            "end_date": result["stop"].end_date,
+            "sort_order": result["stop"].sort_order,
+        },
+        "hotel_status": result["hotel_status"],
+        "warnings": result["warnings"],
     }
 
 

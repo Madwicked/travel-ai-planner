@@ -4,7 +4,18 @@ from sqlalchemy.orm import Session
 
 from app.models.hotel import TripHotel
 from app.models.transport import TripTransport
+from app.models.trip import Trip
 from app.models.trip_stop import TripStop
+
+
+def _format_date(value):
+    if value is None:
+        return ""
+
+    if isinstance(value, datetime):
+        value = value.date()
+
+    return value.strftime("%d.%m.%Y")
 
 
 def _parse_transport_datetime(
@@ -95,6 +106,7 @@ def _hotel_overlaps_flight(
 def _get_hotel_gap_after_outbound_flight(
     hotel,
     transport,
+    hotels,
     stops,
 ):
     if transport.direction != "outbound":
@@ -108,23 +120,54 @@ def _get_hotel_gap_after_outbound_flight(
     if arrival is None:
         return None
 
-    next_stop = next(
+    hotel_stop = next(
         (
             stop
             for stop in stops
-            if stop.start_date >= arrival.date()
+            if stop.id == hotel.stop_id
         ),
         None,
     )
 
-    if next_stop is None:
+    if hotel_stop is None:
         return None
 
-    if hotel.stop_id != next_stop.id:
+    if hotel_stop.start_date < arrival.date():
         return None
 
     if hotel.check_in <= arrival.date():
         return None
+
+    previous_hotels = []
+
+    for stop in stops:
+        if stop.start_date >= hotel_stop.start_date:
+            continue
+
+        previous_hotel = next(
+            (
+                item
+                for item in hotels
+                if item.stop_id == stop.id
+            ),
+            None,
+        )
+
+        if previous_hotel is not None:
+            previous_hotels.append(previous_hotel)
+
+    previous_hotels.sort(
+        key=lambda item: (
+            item.check_out,
+            item.check_in,
+        )
+    )
+
+    if previous_hotels:
+        last_previous_hotel = previous_hotels[-1]
+
+        if last_previous_hotel.check_out >= hotel.check_in:
+            return None
 
     gap_days = (
         hotel.check_in - arrival.date()
@@ -145,11 +188,62 @@ def _get_hotel_gap_after_outbound_flight(
         "gap_days": gap_days,
         "message": (
             f"Flight arrives on "
-            f"{transport.arrival_date} "
+            f"{_format_date(transport.arrival_date)} "
             f"at {transport.arrival_time}, "
             f"but hotel check-in is "
-            f"{hotel.check_in}. "
+            f"{_format_date(hotel.check_in)}. "
             f"There is a {gap_days}-day gap."
+        ),
+    }
+
+def _get_hotel_before_outbound_arrival_warning(
+    hotel,
+    transport,
+):
+    if transport.direction != "outbound":
+        return None
+
+    arrival = _parse_transport_datetime(
+        transport.arrival_date,
+        transport.arrival_time,
+    )
+
+    if arrival is None:
+        return None
+
+    if hotel.check_in >= arrival.date():
+        return None
+
+    unused_nights = (
+        arrival.date() - hotel.check_in
+    ).days
+
+    if unused_nights <= 0:
+        return None
+
+    return {
+        "type": "hotel_check_in_before_flight_arrival",
+        "severity": "important",
+        "hotel_id": hotel.id,
+        "hotel_name": hotel.name,
+        "transport_id": transport.id,
+        "transport_direction": transport.direction,
+        "flight_arrival_date": transport.arrival_date,
+        "flight_arrival_time": transport.arrival_time,
+        "hotel_check_in": hotel.check_in,
+        "unused_nights": unused_nights,
+        "message": (
+            f"Hotel check-in is on "
+            f"{_format_date(hotel.check_in)}, "
+            f"but the outbound flight arrives on "
+            f"{_format_date(transport.arrival_date)} "
+            f"at {transport.arrival_time}. "
+            f"You may miss {unused_nights} "
+            f"hotel night(s). "
+            f"If you do not arrive on the "
+            f"check-in date, the booking may be "
+            f"treated as a no-show and charges "
+            f"or cancellation may apply."
         ),
     }
 
@@ -203,11 +297,11 @@ def _get_hotel_sequence_warnings(
                     "message": (
                         f"Hotel '{current_hotel.name}' "
                         f"checks out on "
-                        f"{current_hotel.check_out}, "
+                        f"{_format_date(current_hotel.check_out)}, "
                         f"but next hotel "
                         f"'{next_hotel.name}' "
                         f"checks in on "
-                        f"{next_hotel.check_in}. "
+                        f"{_format_date(next_hotel.check_in)}. "
                         f"There is a {gap_days}-day gap."
                     ),
                 }
@@ -230,11 +324,11 @@ def _get_hotel_sequence_warnings(
                     "message": (
                         f"Hotel '{current_hotel.name}' "
                         f"checks out on "
-                        f"{current_hotel.check_out}, "
+                        f"{_format_date(current_hotel.check_out)}, "
                         f"but next hotel "
                         f"'{next_hotel.name}' "
                         f"checks in on "
-                        f"{next_hotel.check_in}. "
+                        f"{_format_date(next_hotel.check_in)}. "
                         f"The hotel dates overlap."
                     ),
                 }
@@ -313,9 +407,9 @@ def _get_last_hotel_flight_warnings(
                 "message": (
                     f"Hotel '{last_hotel.name}' "
                     f"checks out on "
-                    f"{last_hotel.check_out}, "
+                    f"{_format_date(last_hotel.check_out)}, "
                     f"but return flight departs on "
-                    f"{return_flight.departure_date} "
+                    f"{_format_date(return_flight.departure_date)} "
                     f"at {return_flight.departure_time}. "
                     f"There is a {gap_days}-day gap."
                 ),
@@ -340,9 +434,9 @@ def _get_last_hotel_flight_warnings(
                 "message": (
                     f"Hotel '{last_hotel.name}' "
                     f"checks out on "
-                    f"{last_hotel.check_out}, "
+                    f"{_format_date(last_hotel.check_out)}, "
                     f"but return flight departs on "
-                    f"{return_flight.departure_date} "
+                    f"{_format_date(return_flight.departure_date)} "
                     f"at {return_flight.departure_time}. "
                     f"The hotel overlaps with the return flight."
                 ),
@@ -351,6 +445,68 @@ def _get_last_hotel_flight_warnings(
 
     return warnings
 
+
+def _get_return_flight_after_trip_end_warning(
+    transports,
+    trip_end_date,
+):
+    if trip_end_date is None:
+        return []
+
+    return_flights = [
+        transport
+        for transport in transports
+        if transport.direction == "return"
+    ]
+
+    if not return_flights:
+        return []
+
+    return_flights.sort(
+        key=lambda transport: (
+            transport.departure_date,
+            transport.departure_time,
+        )
+    )
+
+    return_flight = return_flights[0]
+
+    if return_flight.arrival_date is None:
+        return []
+
+    if return_flight.arrival_date <= trip_end_date:
+        return []
+
+    gap_days = (
+        return_flight.arrival_date
+        - trip_end_date
+    ).days
+
+    return [
+        {
+            "type": "return_flight_after_trip_end",
+            "severity": "info",
+            "transport_id": return_flight.id,
+            "transport_direction": return_flight.direction,
+            "trip_end_date": trip_end_date,
+            "flight_arrival_date": (
+                return_flight.arrival_date
+            ),
+            "flight_arrival_time": (
+                return_flight.arrival_time
+            ),
+            "gap_days": gap_days,
+            "message": (
+                f"Trip ends on "
+                f"{_format_date(trip_end_date)}, "
+                f"but the return flight arrives on "
+                f"{_format_date(return_flight.arrival_date)} "
+                f"at {return_flight.arrival_time}. "
+                f"The return journey extends "
+                f"{gap_days} day(s) beyond the trip end."
+            ),
+        }
+    ]
 
 def _get_hotel_flight_warnings(
     db: Session,
@@ -387,6 +543,61 @@ def _get_hotel_flight_warnings(
         .all()
     )
 
+    trip = (
+        db.query(Trip)
+        .filter(
+            Trip.id == trip_id,
+        )
+        .first()
+    )
+
+    has_outbound = any(
+        transport.direction == "outbound"
+        for transport in transports
+    )
+
+    has_return = any(
+        transport.direction == "return"
+        for transport in transports
+    )
+
+    if not hotels or not has_outbound or not has_return:
+        return []
+
+    print("=== CONSISTENCY DEBUG ===")
+
+    for hotel in hotels:
+        print(
+            "HOTEL:",
+            hotel.id,
+            hotel.name,
+            "stop_id=", hotel.stop_id,
+            "check_in=", hotel.check_in,
+            "check_out=", hotel.check_out,
+        )
+
+    for transport in transports:
+        print(
+            "FLIGHT:",
+            transport.id,
+            transport.direction,
+            "departure=", transport.departure_date,
+            transport.departure_time,
+            "arrival=", transport.arrival_date,
+            transport.arrival_time,
+        )
+
+    for stop in stops:
+        print(
+            "STOP:",
+            stop.id,
+            stop.city,
+            "start=", stop.start_date,
+            "end=", stop.end_date,
+        )
+
+    print("=== END CONSISTENCY DEBUG ===")
+
     warnings = []
 
     warnings.extend(
@@ -404,17 +615,35 @@ def _get_hotel_flight_warnings(
         )
     )
 
+    warnings.extend(
+        _get_return_flight_after_trip_end_warning(
+            transports=transports,
+            trip_end_date=trip.end_date if trip else None,
+        )
+    )
+
     for hotel in hotels:
         for transport in transports:
 
             gap_warning = _get_hotel_gap_after_outbound_flight(
                 hotel=hotel,
                 transport=transport,
+                hotels=hotels,
                 stops=stops,
             )
 
             if gap_warning is not None:
                 warnings.append(gap_warning)
+
+            before_arrival_warning = (
+                _get_hotel_before_outbound_arrival_warning(
+                    hotel=hotel,
+                    transport=transport,
+                )
+            )
+
+            if before_arrival_warning is not None:
+                warnings.append(before_arrival_warning)
 
             if not _hotel_overlaps_flight(
                 hotel,
