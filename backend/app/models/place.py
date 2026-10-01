@@ -14,6 +14,16 @@ class TripPlace(Base):
         nullable=False,
     )
 
+    stop_id = Column(
+        Integer,
+        ForeignKey("trip_stops.id"),
+        nullable=True,
+        index=True,
+    )
+
+
+    external_id = Column(String(255), nullable=True)
+
     external_id = Column(String(255), nullable=True)
     source = Column(
         String(50),

@@ -22,6 +22,7 @@ class PlaceOptionsResult {
 class PlaceService {
   static Future<PlaceOptionsResult> getPlaceOptions({
     required int tripId,
+    required int stopId,
     int? radiusKm,
     String? search,
     String searchType = 'city',
@@ -33,6 +34,7 @@ class PlaceService {
       'offset': offset.toString(),
       'limit': limit.toString(),
       'search_type': searchType,
+      'stop_id': stopId.toString(),
     };
 
     if (radiusKm != null && searchType == 'city') {
@@ -84,8 +86,13 @@ class PlaceService {
         .toList();
   }
 
-  static Future<void> deletePlaces(int tripId) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/places');
+  static Future<void> deletePlaces({
+    required int tripId,
+    required int stopId,
+  }) async {
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/api/trips/$tripId/places?stop_id=$stopId',
+    );
 
     final response = await http.delete(url);
 
@@ -101,6 +108,7 @@ class PlaceService {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/trips/$tripId/places');
 
     final body = {
+      'stop_id': place.stopId,
       'external_id': place.externalId,
       'source': place.source,
 
@@ -143,6 +151,7 @@ class PlaceService {
 
     final body = places.map((place) {
       return {
+        'stop_id': place.stopId,
         'external_id': place.externalId,
         'source': place.source,
 

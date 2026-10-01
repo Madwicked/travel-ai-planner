@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models.trip import Trip
+from app.models.trip_stop import TripStop
 from app.schemas.trip import PlaceCreate
 from app.services.places import (
     generate_place_options,
@@ -32,19 +33,18 @@ def get_db():
 @router.get("/{trip_id}/places/options")
 def get_place_options(
     trip_id: int,
+    stop_id: int,
     radius_km: int | None = None,
     category: str | None = None,
     offset: int = 0,
     limit: int = 50,
     search: str | None = None,
-        search_type: str = Query(
-            "city",
-            pattern="^(city|country)$",
-        ),
+    search_type: str = Query(
+        "city",
+        pattern="^(city|country)$",
+    ),
     db: Session = Depends(get_db),
-
 ):
-
     trip = db.query(Trip).filter(
         Trip.id == trip_id
     ).first()
@@ -55,21 +55,37 @@ def get_place_options(
             detail="Trip not found",
         )
 
+    stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.id == stop_id,
+            TripStop.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if not stop:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip stop not found",
+        )
+
     result = generate_place_options(
         trip,
         db=db,
+        stop=stop,
         radius_km=radius_km,
         category=category,
         offset=offset,
         limit=limit,
         search=search,
         search_type=search_type,
-
     )
 
     return {
         "trip_id": trip.id,
-        "destination": trip.destination,
+        "stop_id": stop.id,
+        "destination": stop.city,
         **result,
     }
 
@@ -141,6 +157,7 @@ def get_places_endpoint(
 @router.delete("/{trip_id}/places")
 def delete_places_endpoint(
     trip_id: int,
+    stop_id: int,
     db: Session = Depends(get_db),
 ):
     trip = db.query(Trip).filter(
@@ -152,9 +169,24 @@ def delete_places_endpoint(
             status_code=404,
             detail="Trip not found",
         )
+    stop = (
+        db.query(TripStop)
+        .filter(
+            TripStop.id == stop_id,
+            TripStop.trip_id == trip_id,
+        )
+        .first()
+    )
+
+    if not stop:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip stop not found",
+        )
 
     return delete_places(
         trip_id=trip_id,
+        stop_id=stop_id,
         db=db,
     )
 

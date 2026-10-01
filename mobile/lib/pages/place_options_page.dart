@@ -6,14 +6,19 @@ import '../services/place_service.dart';
 
 class PlaceOptionsPage extends StatefulWidget {
   final Map<String, dynamic> trip;
+  final int stopId;
+  final double? stopLatitude;
+  final double? stopLongitude;
   final List<Place> initialSelectedPlaces;
 
   const PlaceOptionsPage({
     super.key,
     required this.trip,
+    required this.stopId,
+    required this.stopLatitude,
+    required this.stopLongitude,
     this.initialSelectedPlaces = const [],
   });
-
   @override
   State<PlaceOptionsPage> createState() => _PlaceOptionsPageState();
 }
@@ -25,6 +30,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
   final Set<int> selectedIndexes = {};
   final Set<String> selectedPlaceIds = {};
+  final Map<String, Place> selectedPlacesById = {};
 
   bool isLoading = true;
   String? errorMessage;
@@ -63,18 +69,14 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   bool get hasMore => currentOffset < filteredOptions.length;
 
   List<Place> _removeDuplicatesByCategory(List<Place> places) {
-    final seen = <String>{};
     final result = <Place>[];
 
     for (final place in places) {
-      final category = place.category.trim().toLowerCase();
-      final externalId = place.externalId?.trim();
+      final alreadyExists = result.any(
+        (existing) => _samePlace(existing, place),
+      );
 
-      final key = externalId != null && externalId.isNotEmpty
-          ? '$category|external:$externalId'
-          : '$category|name:${place.name.trim().toLowerCase()}';
-
-      if (seen.add(key)) {
+      if (!alreadyExists) {
         result.add(place);
       }
     }
@@ -123,19 +125,23 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   void _initializeSelectedIndexes() {
     selectedIndexes.clear();
 
-    if (!isAddingPlaces) {
-      return;
-    }
+    if (isAddingPlaces) {
+      for (final place in widget.initialSelectedPlaces) {
+        final identity = _placeIdentity(place);
 
-    for (final place in widget.initialSelectedPlaces) {
-      selectedPlaceIds.add(_placeIdentity(place));
+        selectedPlaceIds.add(identity);
+        selectedPlacesById[identity] = place;
+      }
     }
 
     for (var index = 0; index < options.length; index++) {
       final place = options[index];
+      final identity = _placeIdentity(place);
 
-      if (selectedPlaceIds.contains(_placeIdentity(place))) {
+      if (selectedPlaceIds.contains(identity)) {
         selectedIndexes.add(index);
+
+        selectedPlacesById[identity] = place;
       }
     }
   }
@@ -158,6 +164,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
       for (final category in categoriesToLoad) {
         final result = await PlaceService.getPlaceOptions(
           tripId: tripId,
+          stopId: widget.stopId,
           radiusKm: useRadius ? radiusKm.round() : null,
           searchType: searchType,
           category: category,
@@ -303,9 +310,11 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
     setState(() {
       if (isSelected) {
         selectedPlaceIds.remove(placeId);
+        selectedPlacesById.remove(placeId);
         selectedIndexes.removeAll(relatedIndexes);
       } else {
         selectedPlaceIds.add(placeId);
+        selectedPlacesById[placeId] = selectedPlace;
         selectedIndexes.addAll(relatedIndexes);
       }
     });
@@ -322,10 +331,7 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
   }
 
   void savePlaces() {
-    final selectedPlaces = selectedIndexes
-        .where((index) => index >= 0 && index < options.length)
-        .map((index) => options[index])
-        .toList();
+    final selectedPlaces = selectedPlacesById.values.toList();
 
     if (!isAddingPlaces) {
       Navigator.pop(context, selectedPlaces);
@@ -334,25 +340,9 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
     final result = <Place>[];
 
-    // Оставляем ранее сохранённые места, которые пользователь
-    // не снял с выбора.
-    for (final initialPlace in widget.initialSelectedPlaces) {
-      final stillSelected = selectedPlaces.any(
-        (selectedPlace) => _samePlace(selectedPlace, initialPlace),
-      );
-
-      if (stillSelected) {
-        result.add(initialPlace);
-      }
-    }
-
-    // Добавляем все выбранные записи.
-    // Разные категории одного физического места сохраняются.
     for (final selectedPlace in selectedPlaces) {
       final alreadyInResult = result.any(
-        (place) =>
-            place.externalId == selectedPlace.externalId &&
-            place.category == selectedPlace.category,
+        (place) => _samePlace(place, selectedPlace),
       );
 
       if (!alreadyInResult) {
@@ -1110,9 +1100,20 @@ class _PlaceOptionsPageState extends State<PlaceOptionsPage> {
 
           const SizedBox(height: 10),
 
+          if (widget.stopLatitude != null && widget.stopLongitude != null)
+            PlacesMap(
+              places: mapPlaces,
+              selectedPlaces: mapSelectedPlaces,
+              centerLatitude: widget.stopLatitude!,
+              centerLongitude: widget.stopLongitude!,
+              onPlaceTap: togglePlaceFromMap,
+            ),
+
           PlacesMap(
             places: mapPlaces,
             selectedPlaces: mapSelectedPlaces,
+            centerLatitude: widget.stopLatitude ?? 0,
+            centerLongitude: widget.stopLongitude ?? 0,
             onPlaceTap: togglePlaceFromMap,
           ),
 

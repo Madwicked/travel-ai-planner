@@ -41,7 +41,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
 
   Map<int, Hotel> selectedStopHotels = {};
 
-  List<Place> selectedPlaces = [];
+  Map<int, List<Place>> selectedStopPlaces = {};
 
   List<TripStop> tripStops = [];
   bool isLoadingTripStops = true;
@@ -716,6 +716,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       // Find the stop in which the departure date belongs.
       for (final stop in tripStops) {
         final hotel = selectedStopHotels[stop.id];
+        final places = selectedStopPlaces[stop.id] ?? [];
 
         if (hotel == null) {
           continue;
@@ -734,7 +735,8 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
           'date=$transportDate, '
           'stop=${stop.city}, '
           'hotel=${hotel.name}, '
-          'hotelId=${hotel.id}',
+          'hotelId=${hotel.id}, '
+          'places=${places.length}',
         );
 
         return hotel;
@@ -2277,10 +2279,22 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     try {
       final places = await PlaceService.getPlaces(tripId);
 
+      final placesByStop = <int, List<Place>>{};
+
+      for (final place in places) {
+        final stopId = place.stopId;
+
+        if (stopId == null) {
+          continue;
+        }
+
+        placesByStop.putIfAbsent(stopId, () => []).add(place);
+      }
+
       if (!mounted) return;
 
       setState(() {
-        selectedPlaces = places;
+        selectedStopPlaces = placesByStop;
         isLoadingPlaces = false;
       });
     } catch (e) {
@@ -2292,11 +2306,19 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Future<void> choosePlaces() async {
+  Future<void> choosePlaces(TripStop stop) async {
+    final placesForStop = selectedStopPlaces[stop.id] ?? [];
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => PlaceOptionsPage(trip: widget.trip),
+        builder: (context) => PlaceOptionsPage(
+          trip: widget.trip,
+          stopId: stop.id,
+          stopLatitude: stop.latitude,
+          stopLongitude: stop.longitude,
+          initialSelectedPlaces: placesForStop,
+        ),
       ),
     );
 
@@ -2304,11 +2326,35 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       return;
     }
 
-    final places = List<Place>.from(result);
+    final selectedPlaces = List<Place>.from(result);
+
+    final places = selectedPlaces.map((place) {
+      return Place(
+        id: place.id,
+        tripId: place.tripId,
+        stopId: stop.id,
+        externalId: place.externalId,
+        source: place.source,
+        name: place.name,
+        city: place.city,
+        country: place.country,
+        category: place.category,
+        address: place.address,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        rating: place.rating,
+        openingHours: place.openingHours,
+        openingTime: place.openingTime,
+        closingTime: place.closingTime,
+        visitDuration: place.visitDuration,
+        distanceKm: place.distanceKm,
+      );
+    }).toList();
+
     final tripId = widget.trip['id'];
 
     try {
-      await PlaceService.deletePlaces(tripId);
+      await PlaceService.deletePlaces(tripId: tripId, stopId: stop.id);
 
       final savedPlaces = await PlaceService.createPlacesBulk(
         tripId: tripId,
@@ -2318,7 +2364,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       if (!context.mounted) return;
 
       setState(() {
-        selectedPlaces = savedPlaces;
+        selectedStopPlaces[stop.id] = savedPlaces;
       });
 
       ScaffoldMessenger.of(context)
@@ -2331,13 +2377,18 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Future<void> addPlaces() async {
+  Future<void> addPlaces(TripStop stop) async {
+    final placesForStop = selectedStopPlaces[stop.id] ?? [];
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PlaceOptionsPage(
           trip: widget.trip,
-          initialSelectedPlaces: selectedPlaces,
+          stopId: stop.id,
+          stopLatitude: stop.latitude,
+          stopLongitude: stop.longitude,
+          initialSelectedPlaces: placesForStop,
         ),
       ),
     );
@@ -2346,16 +2397,40 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       return;
     }
 
-    final places = List<Place>.from(result);
+    final selectedPlaces = List<Place>.from(result);
 
-    final existingIds = selectedPlaces
+    final existingIds = placesForStop
         .where((place) => place.id != null)
         .map((place) => place.id!)
         .toSet();
 
-    final newPlaces = places.where((place) {
-      return place.id == null || !existingIds.contains(place.id);
-    }).toList();
+    final newPlaces = selectedPlaces
+        .where((place) {
+          return place.id == null || !existingIds.contains(place.id);
+        })
+        .map((place) {
+          return Place(
+            id: place.id,
+            tripId: place.tripId,
+            stopId: stop.id,
+            externalId: place.externalId,
+            source: place.source,
+            name: place.name,
+            city: place.city,
+            country: place.country,
+            category: place.category,
+            address: place.address,
+            latitude: place.latitude,
+            longitude: place.longitude,
+            rating: place.rating,
+            openingHours: place.openingHours,
+            openingTime: place.openingTime,
+            closingTime: place.closingTime,
+            visitDuration: place.visitDuration,
+            distanceKm: place.distanceKm,
+          );
+        })
+        .toList();
 
     if (newPlaces.isEmpty) {
       return;
@@ -2372,7 +2447,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
       if (!context.mounted) return;
 
       setState(() {
-        selectedPlaces.addAll(savedPlaces);
+        selectedStopPlaces[stop.id] = [...placesForStop, ...savedPlaces];
       });
 
       ScaffoldMessenger.of(context)
@@ -2385,7 +2460,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
     }
   }
 
-  Widget buildPlaceCard(Place place) {
+  Widget buildPlaceCard(Place place, TripStop stop) {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -2423,7 +2498,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                   if (!mounted) return;
 
                   setState(() {
-                    selectedPlaces.remove(place);
+                    selectedStopPlaces[stop.id]?.remove(place);
                   });
                 } catch (e) {
                   if (!mounted) return;
@@ -2732,6 +2807,7 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               final stop = entry.value;
 
               final hotel = selectedStopHotels[stop.id];
+              final places = selectedStopPlaces[stop.id] ?? [];
 
               TripStop? nextStop;
 
@@ -2909,6 +2985,65 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                             ),
                           ),
                         ),
+
+                      const SizedBox(height: 16),
+
+                      const Text(
+                        'Places',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      if (places.isNotEmpty) ...[
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: places.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 6,
+                                childAspectRatio: 4.5,
+                              ),
+                          itemBuilder: (context, placeIndex) {
+                            return buildPlaceCard(places[placeIndex], stop);
+                          },
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => addPlaces(stop),
+                                child: const Text('Add places'),
+                              ),
+                            ),
+
+                            const SizedBox(width: 10),
+
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => choosePlaces(stop),
+                                child: const Text('Change places'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton(
+                            onPressed: () => choosePlaces(stop),
+                            child: const Text('Choose places'),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -3075,63 +3210,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
               ElevatedButton(
                 onPressed: chooseReturnTransport,
                 child: const Text('Choose return transport'),
-              ),
-
-            const SizedBox(height: 24),
-
-            // =========================
-            // PLACES
-            // =========================
-            const Text(
-              'Places',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 12),
-
-            if (isLoadingPlaces)
-              const Center(child: CircularProgressIndicator())
-            else if (selectedPlaces.isNotEmpty) ...[
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: selectedPlaces.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 6,
-                  childAspectRatio: 4.5,
-                ),
-                itemBuilder: (context, index) {
-                  return buildPlaceCard(selectedPlaces[index]);
-                },
-              ),
-
-              const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: addPlaces,
-                      child: const Text('Add places'),
-                    ),
-                  ),
-
-                  const SizedBox(width: 10),
-
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: choosePlaces,
-                      child: const Text('Change places'),
-                    ),
-                  ),
-                ],
-              ),
-            ] else
-              ElevatedButton(
-                onPressed: choosePlaces,
-                child: const Text('Choose places'),
               ),
 
             const SizedBox(height: 24),

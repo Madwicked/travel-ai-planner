@@ -7,12 +7,16 @@ import '../models/place.dart';
 class PlacesMap extends StatefulWidget {
   final List<Place> places;
   final List<Place> selectedPlaces;
+  final double centerLatitude;
+  final double centerLongitude;
   final ValueChanged<Place> onPlaceTap;
 
   const PlacesMap({
     super.key,
     required this.places,
     required this.selectedPlaces,
+    required this.centerLatitude,
+    required this.centerLongitude,
     required this.onPlaceTap,
   });
 
@@ -47,9 +51,7 @@ class _PlacesMapState extends State<PlacesMap> {
       return const SizedBox.shrink();
     }
 
-    final firstPlace = placesWithCoordinates.first;
-
-    final center = LatLng(firstPlace.latitude!, firstPlace.longitude!);
+    final center = LatLng(widget.centerLatitude, widget.centerLongitude);
 
     return SizedBox(
       height: 300,

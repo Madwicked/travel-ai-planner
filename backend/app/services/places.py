@@ -4,6 +4,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.models.place import TripPlace
+from app.models.trip_stop import TripStop
 from app.schemas.trip import PlaceCreate
 from app.services.cache_service import cache_service
 from app.services.geoapify_places import (
@@ -32,21 +33,25 @@ CATEGORY_LABELS = {
 
 def _build_places_cache_type(
     trip_id: int,
+    stop_id: int,
     latitude: float | None,
     longitude: float | None,
     radius_km: int | None,
     country_place_id: str | None,
     search: str | None,
     search_type: str,
+    category: str,
 ) -> str:
     cache_params = {
         "trip_id": trip_id,
+        "stop_id": stop_id,
         "latitude": latitude,
         "longitude": longitude,
         "radius_km": radius_km,
         "country_place_id": country_place_id,
         "search": search,
         "search_type": search_type,
+        "category": category,
     }
 
     params_json = json.dumps(
@@ -81,6 +86,7 @@ def _build_trip_place(
 ) -> TripPlace:
     return TripPlace(
         trip_id=trip_id,
+        stop_id=place.stop_id,
         external_id=place.external_id,
         source=place.source,
         name=place.name,
@@ -104,6 +110,7 @@ def _place_to_dict(
     return {
         "id": place.id,
         "trip_id": place.trip_id,
+        "stop_id": place.stop_id,
         "external_id": place.external_id,
         "source": place.source,
         "name": place.name,
@@ -350,7 +357,6 @@ def _load_places_from_geoapify(
             and option.get("longitude") is not None
         ]
 
-
     # ---------------------------------------------------------
     # Country search:
     # Attractions / Nature / Entertainment -> Wikipedia
@@ -419,6 +425,7 @@ def _filter_by_category(
 def generate_place_options(
     trip,
     db: Session,
+    stop: TripStop,
     radius_km: int | None = None,
     category: str | None = None,
     offset: int = 0,
@@ -426,12 +433,12 @@ def generate_place_options(
     search: str | None = None,
     search_type: str = "city",
 ):
-    latitude = trip.destination_latitude
-    longitude = trip.destination_longitude
+    latitude = stop.latitude
+    longitude = stop.longitude
     country_place_id = None
 
-    city = trip.destination
-    country = trip.destination_country
+    city = stop.city
+    country = stop.country or trip.destination_country
 
     # ---------------------------------------------------------
     # Country search
@@ -495,16 +502,18 @@ def generate_place_options(
 
     # ---------------------------------------------------------
     # Cache contains ALL categories.
-    # Category is intentionally NOT part of cache key.
+    # Cache is specific to the trip stop.
     # ---------------------------------------------------------
     cache_type = _build_places_cache_type(
         trip_id=trip.id,
+        stop_id=stop.id,
         latitude=latitude,
         longitude=longitude,
         radius_km=radius_km,
         country_place_id=country_place_id,
         search=search,
         search_type=search_type,
+        category=category,
     )
 
     cache = cache_service.get(
@@ -579,10 +588,12 @@ def generate_place_options(
 
 def delete_places(
     trip_id: int,
+    stop_id: int,
     db: Session,
 ):
     db.query(TripPlace).filter(
-        TripPlace.trip_id == trip_id
+        TripPlace.trip_id == trip_id,
+        TripPlace.stop_id == stop_id,
     ).delete(
         synchronize_session=False
     )
@@ -592,6 +603,7 @@ def delete_places(
     return {
         "message": "Places deleted",
         "trip_id": trip_id,
+        "stop_id": stop_id,
     }
 
 
@@ -630,27 +642,88 @@ def create_places_bulk(
         .all()
     )
 
-    existing_keys = {
-        (
-            place.external_id,
-            place.category,
+    def same_place(
+        first: PlaceCreate | TripPlace,
+        second: PlaceCreate | TripPlace,
+    ) -> bool:
+        if first.stop_id != second.stop_id:
+            return False
+
+        first_external_id = (
+            first.external_id.strip()
+            if first.external_id
+            else None
         )
-        for place in existing_places
-    }
+        second_external_id = (
+            second.external_id.strip()
+            if second.external_id
+            else None
+        )
+
+        # Если у обоих есть external_id,
+        # это основной идентификатор места.
+        if first_external_id and second_external_id:
+            return first_external_id == second_external_id
+
+        first_name = first.name.strip().casefold()
+        second_name = second.name.strip().casefold()
+
+        first_city = first.city.strip().casefold()
+        second_city = second.city.strip().casefold()
+
+        first_address = (
+            first.address.strip().casefold()
+            if first.address
+            else ""
+        )
+        second_address = (
+            second.address.strip().casefold()
+            if second.address
+            else ""
+        )
+
+        # Для мест без external_id используем
+        # имя + город + адрес.
+        if (
+            first_name == second_name
+            and first_city == second_city
+            and first_address == second_address
+        ):
+            return True
+
+        # Если адрес отсутствует, но координаты есть,
+        # дополнительно сравниваем координаты.
+        if (
+            first.latitude is not None
+            and first.longitude is not None
+            and second.latitude is not None
+            and second.longitude is not None
+        ):
+            return (
+                abs(first.latitude - second.latitude) < 0.00001
+                and abs(first.longitude - second.longitude) < 0.00001
+                and first_name == second_name
+            )
+
+        return False
 
     new_places = []
-    added_keys = set()
 
     for place in places:
-        key = (
-            place.external_id,
-            place.category,
+        already_exists = any(
+            same_place(place, existing_place)
+            for existing_place in existing_places
         )
 
-        if key in existing_keys:
+        if already_exists:
             continue
 
-        if key in added_keys:
+        already_added = any(
+            same_place(place, added_place)
+            for added_place in new_places
+        )
+
+        if already_added:
             continue
 
         new_place = _build_trip_place(
@@ -659,7 +732,6 @@ def create_places_bulk(
         )
 
         new_places.append(new_place)
-        added_keys.add(key)
 
     if new_places:
         db.add_all(new_places)
@@ -677,6 +749,7 @@ def create_places_bulk(
             for place in new_places
         ],
     }
+
 
 def get_places(
     trip_id: int,

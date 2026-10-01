@@ -12,6 +12,7 @@ from app.routers.transports import router as transports_router
 from app.routers.hotels import router as hotels_router
 from app.routers.itinerary import router as itinerary_router
 from app.routers.transfers import router as transfers_router
+from app.routers.routing import router as routing_router
 
 
 app = FastAPI(
@@ -32,6 +33,7 @@ app.include_router(transports_router)
 app.include_router(hotels_router)
 app.include_router(itinerary_router)
 app.include_router(transfers_router)
+app.include_router(routing_router)
 
 
 @app.get("/docs", include_in_schema=False)

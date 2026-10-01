@@ -1,6 +1,7 @@
 class Place {
   final int? id;
   final int? tripId;
+  final int? stopId;
 
   final String? externalId;
   final String source;
@@ -28,6 +29,7 @@ class Place {
     this.distanceKm,
     this.id,
     this.tripId,
+    this.stopId,
     this.externalId,
     required this.source,
     required this.name,
@@ -65,6 +67,8 @@ class Place {
 
       tripId: json['trip_id'] is num ? (json['trip_id'] as num).toInt() : null,
 
+      stopId: json['stop_id'] is num ? (json['stop_id'] as num).toInt() : null,
+
       externalId: asString(json['external_id']),
 
       source: asString(json['source']) ?? 'mock',
@@ -100,6 +104,7 @@ class Place {
       'distance_km': distanceKm,
       'id': id,
       'trip_id': tripId,
+      'stop_id': stopId,
       'external_id': externalId,
       'source': source,
       'name': name,

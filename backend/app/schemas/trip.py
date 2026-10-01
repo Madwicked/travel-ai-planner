@@ -115,7 +115,6 @@ class PlaceCreate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
 
-
     rating: float | None = None
 
     opening_hours: dict | None = None
@@ -124,6 +123,8 @@ class PlaceCreate(BaseModel):
     closing_time: str | None = None
 
     visit_duration: str | None = None
+
+    stop_id: int | None = None
 
 class CurrencyUpdate(BaseModel):
     user_currency: str
