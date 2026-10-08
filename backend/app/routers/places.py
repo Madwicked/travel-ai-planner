@@ -221,3 +221,12 @@ def delete_place_endpoint(
 
     return result
 
+@router.get("/debug-wikidata/{wikidata_id}")
+def debug_wikidata(
+    wikidata_id: str,
+):
+    from app.services.wikipedia_discovery import WikipediaDiscoveryService
+
+    service = WikipediaDiscoveryService()
+
+    return service.debug_candidate(wikidata_id)
